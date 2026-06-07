@@ -326,7 +326,8 @@ function buildScene(exp) {
   const scene = document.createElement('a-scene')
   scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.001; filterBeta: 0.01; warmupTolerance: 5; missTolerance: 5`)
   scene.setAttribute('color-space', 'sRGB')
-  scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true')
+  scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true; alpha: true')
+  scene.setAttribute('background', 'color: transparent; transparent: true')
   scene.setAttribute('vr-mode-ui', 'enabled: false')
   scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
 
