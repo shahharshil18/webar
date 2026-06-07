@@ -51,3 +51,15 @@ export async function deleteExperience(productId) {
   const { error } = await supabase.from('experiences').delete().eq('product_id', productId)
   if (error) throw error
 }
+
+export async function uploadMarkerMind(userId, productId, buffer) {
+  const path = `${userId}/${productId}/marker.mind`
+  const blob = new Blob([buffer], { type: 'application/octet-stream' })
+  const { error } = await supabase.storage.from('markers').upload(path, blob, {
+    upsert: true,
+    contentType: 'application/octet-stream',
+  })
+  if (error) throw error
+  const { data } = supabase.storage.from('markers').getPublicUrl(path)
+  return data.publicUrl
+}

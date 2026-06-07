@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { saveExperience, uploadFile } from '../lib/supabase'
+import { saveExperience, uploadFile, uploadMarkerMind } from '../lib/supabase'
 import { TEMPLATES, EXPERIENCE_TYPES } from '../lib/constants'
 import ARPreview from './ARPreview'
 import QRDisplay from './QRDisplay'
@@ -15,6 +15,7 @@ export default function ExperienceEditor({ experience, userId, onSaved, onCancel
     cta_url: experience.cta_url || '',
     media_url: experience.media_url || '',
     media_urls: experience.media_urls || [],
+    marker_url: experience.marker_url || '',
   })
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -60,6 +61,7 @@ export default function ExperienceEditor({ experience, userId, onSaved, onCancel
         cta_url: form.cta_url,
         media_url: form.media_url,
         media_urls: form.media_urls,
+        marker_url: form.marker_url,
       }
       const saved = await saveExperience(userId, experience.product_id, payload)
       onSaved(saved)
@@ -92,6 +94,7 @@ export default function ExperienceEditor({ experience, userId, onSaved, onCancel
           <div className="editor-tabs">
             {[
               { id: 'content', label: '📦 Content' },
+              { id: 'marker', label: '🎯 Marker' },
               { id: 'cta', label: '🔗 Call to Action' },
               { id: 'generate', label: '✦ Generate' },
             ].map(t => (
@@ -111,6 +114,14 @@ export default function ExperienceEditor({ experience, userId, onSaved, onCancel
                 fileRef={fileRef}
                 handleFileUpload={handleFileUpload}
                 selectedTemplate={selectedTemplate}
+              />
+            )}
+            {tab === 'marker' && (
+              <MarkerTab
+                form={form}
+                set={set}
+                userId={userId}
+                productId={experience.product_id}
               />
             )}
             {tab === 'cta' && <CTATab form={form} set={set} />}
@@ -511,6 +522,173 @@ function CTATab({ form, set }) {
           margin-bottom: 10px;
         }
         .cta-url-preview { font-size: 11px; color: rgba(255,255,255,0.35); }
+      `}</style>
+    </div>
+  )
+}
+
+let _mindARModule = null
+async function loadMindARCompiler() {
+  if (_mindARModule) return _mindARModule
+  _mindARModule = await import(/* @vite-ignore */ 'https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js')
+  return _mindARModule
+}
+
+function MarkerTab({ form, set, userId, productId }) {
+  const [status, setStatus] = useState('idle') // idle | loading | compiling | uploading | done | error
+  const [progress, setProgress] = useState(0)
+  const [previewUrl, setPreviewUrl] = useState(null)
+  const [errorMsg, setErrorMsg] = useState('')
+  const fileRef = useRef(null)
+
+  async function handleMarkerImage(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setStatus('loading')
+    setProgress(0)
+    setErrorMsg('')
+
+    const objectUrl = URL.createObjectURL(file)
+    setPreviewUrl(objectUrl)
+
+    try {
+      setStatus('loading')
+      const { Compiler } = await loadMindARCompiler()
+
+      const img = new Image()
+      await new Promise((res, rej) => {
+        img.onload = res
+        img.onerror = rej
+        img.src = objectUrl
+      })
+
+      setStatus('compiling')
+      const compiler = new Compiler()
+      await compiler.compileImageTargets([img], (p) => setProgress(Math.round(p * 100)))
+      const buffer = await compiler.exportData()
+
+      setStatus('uploading')
+      const url = await uploadMarkerMind(userId, productId, buffer)
+      set('marker_url', url)
+      setStatus('done')
+    } catch (err) {
+      setStatus('error')
+      setErrorMsg(err.message || 'Compilation failed')
+    }
+  }
+
+  const statusLabel = {
+    idle: null,
+    loading: 'Loading compiler…',
+    compiling: `Compiling marker… ${progress}%`,
+    uploading: 'Uploading…',
+    done: 'Marker ready!',
+    error: errorMsg,
+  }[status]
+
+  return (
+    <div className="marker-tab">
+      <p className="marker-desc">
+        Upload the image that will act as the AR trigger — your product label, packaging artwork, or any distinctive graphic.
+        When the camera detects this image, the AR experience will play.
+      </p>
+
+      <div className="field-group">
+        <label className="field-label">Reference Image</label>
+        <div
+          className={`upload-zone ${status === 'done' ? 'upload-done' : ''}`}
+          onClick={() => fileRef.current?.click()}
+          style={{ cursor: status === 'compiling' || status === 'uploading' ? 'default' : 'pointer' }}
+        >
+          {previewUrl ? (
+            <img src={previewUrl} alt="Marker preview" style={{ maxHeight: 120, borderRadius: 8, marginBottom: 8 }} />
+          ) : (
+            <span className="upload-icon">🎯</span>
+          )}
+          {status === 'compiling' || status === 'uploading' || status === 'loading' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div className="spinner-sm" />
+              <span>{statusLabel}</span>
+            </div>
+          ) : status === 'done' ? (
+            <span style={{ color: 'var(--teal)', fontWeight: 600 }}>✓ {statusLabel} — click to replace</span>
+          ) : status === 'error' ? (
+            <span style={{ color: '#e05252' }}>{statusLabel}</span>
+          ) : (
+            <>
+              <span>Click to upload reference image (JPG / PNG)</span>
+              <span className="upload-hint">Use clear, high-contrast artwork for best tracking</span>
+            </>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp"
+          style={{ display: 'none' }} onChange={handleMarkerImage} />
+      </div>
+
+      {form.marker_url && (
+        <div className="marker-saved">
+          <span>✓ Marker compiled and saved</span>
+          <a href={form.marker_url} target="_blank" rel="noopener noreferrer" className="marker-link">
+            View .mind file
+          </a>
+        </div>
+      )}
+
+      <div className="marker-tips">
+        <h4>Tips for a good marker image</h4>
+        <ul>
+          <li>Use an image with lots of detail and contrast (logos, illustrations work well)</li>
+          <li>Avoid plain colours, gradients, or very repetitive patterns</li>
+          <li>Minimum 300×300 px, ideally the actual print resolution</li>
+          <li>The same physical image must be present when scanning</li>
+        </ul>
+      </div>
+
+      <style>{`
+        .marker-tab { display: flex; flex-direction: column; gap: 20px; }
+        .marker-desc { font-size: 13px; color: var(--ink-3); line-height: 1.6; }
+        .field-group { display: flex; flex-direction: column; gap: 8px; }
+        .field-label { font-size: 12px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.7px; }
+        .upload-zone {
+          border: 2px dashed var(--border-strong);
+          border-radius: var(--r-md);
+          padding: 24px;
+          text-align: center;
+          transition: all 0.2s;
+          display: flex; flex-direction: column; align-items: center; gap: 6px;
+          font-size: 13px; color: var(--ink-3);
+          background: var(--surface-3);
+        }
+        .upload-zone:hover { border-color: var(--gold); background: var(--gold-pale); color: var(--ink-2); }
+        .upload-done { border-color: var(--teal); background: rgba(0,200,140,0.05); }
+        .upload-icon { font-size: 28px; }
+        .upload-hint { font-size: 11px; }
+        .spinner-sm {
+          width: 18px; height: 18px;
+          border: 2px solid var(--border-strong);
+          border-top-color: var(--gold);
+          border-radius: 50%;
+          animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .marker-saved {
+          display: flex; align-items: center; justify-content: space-between;
+          background: rgba(0,200,140,0.08);
+          border: 1px solid rgba(0,200,140,0.25);
+          border-radius: var(--r-sm);
+          padding: 10px 14px;
+          font-size: 13px; font-weight: 600; color: var(--teal);
+        }
+        .marker-link { font-size: 11px; color: var(--ink-3); text-decoration: underline; }
+        .marker-tips {
+          background: var(--surface-3);
+          border: 1px solid var(--border);
+          border-radius: var(--r-md);
+          padding: 14px 16px;
+        }
+        .marker-tips h4 { font-size: 12px; font-weight: 700; color: var(--ink-2); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .marker-tips ul { padding-left: 16px; }
+        .marker-tips li { font-size: 12px; color: var(--ink-3); line-height: 1.7; }
       `}</style>
     </div>
   )

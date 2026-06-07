@@ -45,8 +45,9 @@ create policy "Public read experiences by product_id"
 -- Storage buckets
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
-  ('videos', 'videos', true, 52428800, array['video/mp4','video/webm','video/ogg']),
-  ('images', 'images', true, 10485760, array['image/jpeg','image/png','image/webp','image/gif'])
+  ('videos',  'videos',  true, 52428800, array['video/mp4','video/webm','video/ogg']),
+  ('images',  'images',  true, 10485760, array['image/jpeg','image/png','image/webp','image/gif']),
+  ('markers', 'markers', true, 5242880,  array['application/octet-stream'])
 on conflict (id) do nothing;
 
 -- Storage policies — authenticated users can upload to own folder
@@ -59,6 +60,11 @@ create policy "Authenticated users upload images"
   on storage.objects for insert
   to authenticated
   with check (bucket_id = 'images' and auth.uid()::text = (storage.foldername(name))[1]);
+
+create policy "Authenticated users upload markers"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'markers' and auth.uid()::text = (storage.foldername(name))[1]);
 
 create policy "Authenticated users update own files"
   on storage.objects for update
@@ -73,3 +79,7 @@ create policy "Public read videos"
 create policy "Public read images"
   on storage.objects for select
   using (bucket_id = 'images');
+
+create policy "Public read markers"
+  on storage.objects for select
+  using (bucket_id = 'markers');
