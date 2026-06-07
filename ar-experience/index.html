@@ -9,8 +9,7 @@
   <title>ARgift — Open your gift ✦</title>
 
   <!-- Mind AR + A-Frame -->
-  <script defer src="https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -542,19 +541,10 @@ async function main() {
     return
   }
 
-  setLoadingStatus('Loading AR engine…', 60)
-
-  // Check camera permission
-  try {
-    const perm = await navigator.permissions.query({ name: 'camera' })
-    if (perm.state === 'denied') {
-      $('loading-screen').classList.add('hidden')
-      $('permission-screen').style.display = 'flex'
-      return
-    }
-  } catch {}
-
-  await launchAR()
+  // Always show permission screen first so browser triggers the camera prompt on user gesture
+  setLoadingStatus('Ready…', 60)
+  $('loading-screen').classList.add('hidden')
+  $('permission-screen').style.display = 'flex'
 }
 
 async function launchAR() {
