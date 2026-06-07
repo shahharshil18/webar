@@ -214,6 +214,22 @@
 
     /* A-Frame canvas */
     a-scene { position: fixed !important; inset: 0 !important; }
+
+    /* MindAR camera feed — must be visible behind the canvas */
+    #mindar-arjs-video {
+      position: fixed !important;
+      top: 0 !important; left: 0 !important;
+      width: 100% !important; height: 100% !important;
+      object-fit: cover !important;
+      z-index: 0 !important;
+      display: block !important;
+    }
+    a-scene canvas {
+      position: fixed !important;
+      inset: 0 !important;
+      z-index: 1 !important;
+      background: transparent !important;
+    }
   </style>
 </head>
 <body>
@@ -552,14 +568,6 @@ async function main() {
 
 async function launchAR() {
   setLoadingStatus('Starting camera…', 75)
-
-  try {
-    await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-  } catch (err) {
-    $('loading-screen').classList.add('hidden')
-    $('permission-screen').style.display = 'flex'
-    return
-  }
 
   setLoadingStatus('Building AR scene…', 90)
   sceneEl = buildScene(experience)
