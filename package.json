@@ -1,0 +1,11 @@
+{
+  "name": "argift-platform",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["dashboard"],
+  "scripts": {
+    "dev:dashboard": "npm run dev --workspace=dashboard",
+    "build:dashboard": "npm run build --workspace=dashboard",
+    "dev:ar": "cd ar-experience && npx serve . --cors -l 5500"
+  }
+}

@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0f1e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>ARgift — Open your gift ✦</title>
+
+  <!-- Mind AR + A-Frame -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;600&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --gold: #c9932a;
+      --gold-light: #f0c060;
+      --ink: #0a0f1e;
+      --font-display: 'Playfair Display', serif;
+      --font-body: 'DM Sans', system-ui, sans-serif;
+    }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    body { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+
+    /* ---- Loading Screen ---- */
+    #loading-screen {
+      position: fixed; inset: 0; z-index: 1000;
+      background: var(--ink);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 20px;
+      transition: opacity 0.5s ease;
+    }
+    #loading-screen.hidden { opacity: 0; pointer-events: none; }
+
+    .loading-logo {
+      font-size: 40px; color: var(--gold-light);
+      animation: pulse-glow 2s ease-in-out infinite;
+    }
+    @keyframes pulse-glow {
+      0%,100% { text-shadow: 0 0 20px rgba(240,192,96,0.4); }
+      50% { text-shadow: 0 0 60px rgba(240,192,96,0.9), 0 0 100px rgba(240,192,96,0.4); }
+    }
+    .loading-title {
+      font-family: var(--font-display);
+      font-size: 28px; font-weight: 700;
+      color: #fff; letter-spacing: -0.5px;
+    }
+    #loading-status {
+      font-size: 14px; color: rgba(255,255,255,0.45);
+      text-align: center; padding: 0 32px; line-height: 1.6;
+      min-height: 44px;
+    }
+    .loading-bar-wrap {
+      width: 200px; height: 2px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 1px;
+      overflow: hidden;
+    }
+    .loading-bar {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--gold), var(--gold-light));
+      border-radius: 1px;
+      transition: width 0.3s ease;
+    }
+
+    /* ---- Camera Permission Request ---- */
+    #permission-screen {
+      position: fixed; inset: 0; z-index: 900;
+      background: var(--ink);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 24px;
+      padding: 32px;
+      display: none;
+    }
+    .perm-icon { font-size: 56px; }
+    .perm-title { font-family: var(--font-display); font-size: 26px; color: #fff; text-align: center; }
+    .perm-desc { font-size: 14px; color: rgba(255,255,255,0.5); text-align: center; line-height: 1.7; max-width: 300px; }
+    #btn-allow-camera {
+      background: linear-gradient(135deg, var(--gold), #e8a830);
+      color: #fff; border: none; border-radius: 40px;
+      padding: 16px 40px; font-size: 16px; font-weight: 600;
+      cursor: pointer; font-family: var(--font-body);
+      box-shadow: 0 8px 24px rgba(201,147,42,0.4);
+      transition: all 0.2s;
+    }
+    #btn-allow-camera:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(201,147,42,0.5); }
+
+    /* ---- Scan Hint ---- */
+    #scan-hint {
+      position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+      z-index: 50;
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+      pointer-events: none;
+    }
+    .scan-frame {
+      width: 200px; height: 200px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 16px;
+      position: relative;
+    }
+    .scan-frame::before, .scan-frame::after {
+      content: ''; position: absolute;
+      width: 40px; height: 40px;
+    }
+    .scan-frame::before { top: -2px; left: -2px; border-top: 3px solid var(--gold); border-left: 3px solid var(--gold); border-radius: 12px 0 0 0; }
+    .scan-frame::after { bottom: -2px; right: -2px; border-bottom: 3px solid var(--gold); border-right: 3px solid var(--gold); border-radius: 0 0 12px 0; }
+
+    .scan-line {
+      position: absolute; left: 10px; right: 10px; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      top: 0;
+      animation: scan 2s ease-in-out infinite;
+    }
+    @keyframes scan {
+      0% { top: 10%; opacity: 1; }
+      90% { top: 85%; opacity: 1; }
+      100% { top: 85%; opacity: 0; }
+    }
+    .scan-label { font-size: 13px; color: rgba(255,255,255,0.6); text-align: center; letter-spacing: 0.3px; }
+
+    /* ---- AR Overlay UI ---- */
+    #ar-overlay {
+      position: fixed; inset: 0; z-index: 40;
+      pointer-events: none;
+      display: none;
+    }
+    #ar-overlay.active { display: block; }
+
+    /* CTA Button */
+    #cta-container {
+      position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%);
+      pointer-events: all;
+      display: none;
+      flex-direction: column; align-items: center; gap: 12px;
+      animation: slide-up 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+    #cta-container.visible { display: flex; }
+    @keyframes slide-up {
+      from { transform: translateX(-50%) translateY(40px); opacity: 0; }
+      to { transform: translateX(-50%) translateY(0); opacity: 1; }
+    }
+
+    #btn-cta {
+      background: linear-gradient(135deg, var(--gold), #e8a830);
+      color: #fff; border: none; border-radius: 40px;
+      padding: 15px 36px;
+      font-size: 16px; font-weight: 600;
+      cursor: pointer; font-family: var(--font-body);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 4px 16px rgba(201,147,42,0.4);
+      white-space: nowrap; max-width: 280px;
+      transition: all 0.2s;
+    }
+    #btn-cta:hover { transform: scale(1.03); }
+
+    .ar-secondary-btns {
+      display: flex; gap: 12px;
+    }
+    .ar-sec-btn {
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.25);
+      color: #fff; border-radius: 30px;
+      padding: 9px 20px; font-size: 13px; font-weight: 500;
+      cursor: pointer; font-family: var(--font-body);
+      transition: all 0.2s;
+    }
+    .ar-sec-btn:hover { background: rgba(255,255,255,0.25); }
+
+    /* Header bar */
+    #ar-header {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 16px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      pointer-events: all;
+    }
+    .ar-brand {
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(0,0,0,0.4);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 20px; padding: 6px 14px;
+    }
+    .ar-brand-star { color: var(--gold-light); font-size: 14px; }
+    .ar-brand-name { font-family: var(--font-display); color: #fff; font-size: 14px; font-weight: 600; }
+
+    /* Error Screen */
+    #error-screen {
+      position: fixed; inset: 0; z-index: 800;
+      background: var(--ink);
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px; padding: 32px;
+    }
+    #error-screen.visible { display: flex; }
+    .error-icon { font-size: 48px; }
+    .error-title { font-family: var(--font-display); font-size: 24px; color: #fff; }
+    #error-message { font-size: 14px; color: rgba(255,255,255,0.5); text-align: center; line-height: 1.6; max-width: 300px; }
+    .error-retry {
+      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+      color: #fff; border-radius: 30px; padding: 12px 28px;
+      font-size: 14px; cursor: pointer; font-family: var(--font-body);
+      transition: all 0.2s;
+    }
+    .error-retry:hover { background: rgba(255,255,255,0.2); }
+
+    /* A-Frame canvas */
+    a-scene { position: fixed !important; inset: 0 !important; }
+  </style>
+</head>
+<body>
+
+<!-- Loading Screen -->
+<div id="loading-screen">
+  <div class="loading-logo">✦</div>
+  <div class="loading-title">ARgift</div>
+  <div id="loading-status">Loading your gift experience…</div>
+  <div class="loading-bar-wrap">
+    <div class="loading-bar" id="loading-bar"></div>
+  </div>
+</div>
+
+<!-- Camera Permission -->
+<div id="permission-screen">
+  <div class="perm-icon">📷</div>
+  <div class="perm-title">Allow Camera Access</div>
+  <p class="perm-desc">To open your AR gift, we need your camera. We don't record or store anything.</p>
+  <button id="btn-allow-camera">Allow Camera →</button>
+</div>
+
+<!-- Error Screen -->
+<div id="error-screen">
+  <div class="error-icon">⚠️</div>
+  <div class="error-title">Something went wrong</div>
+  <p id="error-message">Unable to load your gift experience.</p>
+  <button class="error-retry" onclick="location.reload()">Try again</button>
+</div>
+
+<!-- Scan Hint (shown when AR is active but no target found yet) -->
+<div id="scan-hint">
+  <div class="scan-frame">
+    <div class="scan-line"></div>
+  </div>
+  <p class="scan-label">Point at the product to open your gift ✦</p>
+</div>
+
+<!-- A-Frame AR Scene (built dynamically) -->
+<div id="aframe-container"></div>
+
+<!-- AR Overlay UI (header + CTA) -->
+<div id="ar-overlay">
+  <div id="ar-header">
+    <div class="ar-brand">
+      <span class="ar-brand-star">✦</span>
+      <span class="ar-brand-name">ARgift</span>
+    </div>
+  </div>
+
+  <div id="cta-container">
+    <button id="btn-cta">Open Gift</button>
+    <div class="ar-secondary-btns">
+      <button class="ar-sec-btn" id="btn-replay">↺ Replay</button>
+      <button class="ar-sec-btn" id="btn-share">⇧ Share</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ─── Config ─────────────────────────────────────────────────────────────────
+const SUPABASE_URL  = '__SUPABASE_URL__'
+const SUPABASE_KEY  = '__SUPABASE_ANON_KEY__'
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let productId     = null
+let experience    = null
+let sceneEl       = null
+let targetFound   = false
+let ctaShown      = false
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id)
+function setLoadingStatus(msg, pct) {
+  $('loading-status').textContent = msg
+  if (pct !== undefined) $('loading-bar').style.width = pct + '%'
+}
+function showError(msg) {
+  $('error-screen').classList.add('visible')
+  $('error-message').textContent = msg
+  $('loading-screen').classList.add('hidden')
+}
+
+// ─── 1. Parse product ID from URL ────────────────────────────────────────────
+function getProductId() {
+  const params = new URLSearchParams(location.search)
+  return params.get('pid') || params.get('id') || params.get('product')
+}
+
+// ─── 2. Fetch experience from Supabase ───────────────────────────────────────
+async function fetchExperience(pid) {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/experiences?product_id=eq.${encodeURIComponent(pid)}&select=*`,
+    { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+  )
+  if (!res.ok) throw new Error('Failed to fetch experience data')
+  const data = await res.json()
+  if (!data.length) throw new Error('No AR experience found for this product. The link may be incorrect or the experience was deleted.')
+  return data[0]
+}
+
+// ─── 3. Build A-Frame scene ──────────────────────────────────────────────────
+function buildScene(exp) {
+  const container = document.getElementById('aframe-container')
+
+  // Determine marker target source
+  // If the experience has a custom marker, use it; otherwise use a default
+  const markerUrl = exp.marker_url || 'targets/default.mind'
+
+  const scene = document.createElement('a-scene')
+  scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.001; filterBeta: 0.01; warmupTolerance: 5; missTolerance: 5`)
+  scene.setAttribute('color-space', 'sRGB')
+  scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true')
+  scene.setAttribute('vr-mode-ui', 'enabled: false')
+  scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
+
+  const assets = document.createElement('a-assets')
+  assets.setAttribute('timeout', '10000')
+
+  if (exp.experience_type === 'video' && exp.media_url) {
+    const video = document.createElement('video')
+    video.id = 'ar-video'
+    video.src = exp.media_url
+    video.setAttribute('loop', '')
+    video.setAttribute('crossorigin', 'anonymous')
+    video.setAttribute('webkit-playsinline', '')
+    video.setAttribute('playsinline', '')
+    video.setAttribute('preload', 'auto')
+    assets.appendChild(video)
+  }
+
+  scene.appendChild(assets)
+
+  // Camera
+  const camera = document.createElement('a-camera')
+  camera.setAttribute('active', 'false')
+  camera.setAttribute('position', '0 0 0')
+  scene.appendChild(camera)
+
+  // AR target entity
+  const mindarImage = document.createElement('a-entity')
+  mindarImage.setAttribute('mindar-image-target', 'targetIndex: 0')
+
+  const template = exp.template_id || 'golden'
+  const templateConfig = {
+    golden:   { color: '#f0c060', font: 'https://cdn.aframe.io/fonts/DejaVu-sdf.fnt', bg: '#1a0a00' },
+    midnight: { color: '#c8d8ff', font: 'https://cdn.aframe.io/fonts/DejaVu-sdf.fnt', bg: '#0a0f1e' },
+    sakura:   { color: '#4a1530', font: 'https://cdn.aframe.io/fonts/DejaVu-sdf.fnt', bg: '#ffd6e7' },
+    forest:   { color: '#c8f5c8', font: 'https://cdn.aframe.io/fonts/DejaVu-sdf.fnt', bg: '#1a3a1a' },
+  }[template] || { color: '#f0c060', font: 'https://cdn.aframe.io/fonts/DejaVu-sdf.fnt', bg: '#000' }
+
+  if (exp.experience_type === 'video' && exp.media_url) {
+    // Video plane floating above marker
+    const videoEl = document.createElement('a-video')
+    videoEl.setAttribute('src', '#ar-video')
+    videoEl.setAttribute('position', '0 0.3 0')
+    videoEl.setAttribute('width', '1.6')
+    videoEl.setAttribute('height', '0.9')
+    videoEl.setAttribute('rotation', '0 0 0')
+    videoEl.setAttribute('animation', 'property: position; from: 0 0.2 0; to: 0 0.35 0; dur: 3000; loop: true; dir: alternate; easing: easeInOutSine')
+    mindarImage.appendChild(videoEl)
+
+    // Play when target found
+    scene.addEventListener('arReady', () => {})
+  }
+
+  if (exp.experience_type === 'photo' && (exp.media_url || (exp.media_urls && exp.media_urls.length))) {
+    const imgs = exp.media_urls?.length ? exp.media_urls : [exp.media_url]
+    imgs.slice(0, 5).forEach((url, i) => {
+      const plane = document.createElement('a-plane')
+      plane.setAttribute('src', url)
+      plane.setAttribute('width', '1.6')
+      plane.setAttribute('height', '1.0')
+      plane.setAttribute('position', `${i * 0.05} ${0.3 + i * 0.005} ${-i * 0.01}`)
+      plane.setAttribute('rotation', `0 ${i * 2} 0`)
+      plane.setAttribute('visible', i === 0 ? 'true' : 'false')
+      plane.id = `photo-${i}`
+      plane.setAttribute('animation__float', 'property: position; from: 0 0.25 0; to: 0 0.38 0; dur: 3500; loop: true; dir: alternate; easing: easeInOutSine')
+      mindarImage.appendChild(plane)
+    })
+  }
+
+  if (exp.experience_type === 'text') {
+    const textMsg = exp.text_message || 'A gift for you ✦'
+
+    // Background glow panel
+    const bgPanel = document.createElement('a-plane')
+    bgPanel.setAttribute('width', '1.8')
+    bgPanel.setAttribute('height', '0.8')
+    bgPanel.setAttribute('position', '0 0.35 -0.01')
+    bgPanel.setAttribute('color', templateConfig.bg)
+    bgPanel.setAttribute('opacity', '0.7')
+    bgPanel.setAttribute('material', 'transparent: true')
+    mindarImage.appendChild(bgPanel)
+
+    // Text
+    const textEl = document.createElement('a-text')
+    textEl.setAttribute('value', textMsg)
+    textEl.setAttribute('color', templateConfig.color)
+    textEl.setAttribute('align', 'center')
+    textEl.setAttribute('width', '1.6')
+    textEl.setAttribute('position', '0 0.35 0')
+    textEl.setAttribute('wrap-count', '28')
+    textEl.setAttribute('font', templateConfig.font)
+    textEl.setAttribute('animation__float', 'property: position; from: 0 0.3 0; to: 0 0.42 0; dur: 3000; loop: true; dir: alternate; easing: easeInOutSine')
+    textEl.setAttribute('animation__glow', 'property: material.opacity; from: 0.85; to: 1; dur: 1500; loop: true; dir: alternate; easing: easeInOutSine')
+    mindarImage.appendChild(textEl)
+
+    // Particle sparkles
+    for (let i = 0; i < 6; i++) {
+      const spark = document.createElement('a-entity')
+      const x = (Math.random() - 0.5) * 2
+      const y = Math.random() * 0.8
+      spark.setAttribute('position', `${x} ${y} 0.05`)
+      spark.setAttribute('geometry', 'primitive: sphere; radius: 0.015')
+      spark.setAttribute('material', `color: ${templateConfig.color}; emissive: ${templateConfig.color}; emissiveIntensity: 2`)
+      spark.setAttribute('animation', `property: position; from: ${x} ${y} 0.05; to: ${x} ${y + 0.2} 0.05; dur: ${1500 + i * 300}; loop: true; dir: alternate; easing: easeInOutSine`)
+      mindarImage.appendChild(spark)
+    }
+  }
+
+  // Ambient light
+  const light = document.createElement('a-light')
+  light.setAttribute('type', 'ambient')
+  light.setAttribute('color', '#fff')
+  light.setAttribute('intensity', '1.5')
+  scene.appendChild(light)
+
+  scene.appendChild(mindarImage)
+  container.appendChild(scene)
+  return scene
+}
+
+// ─── 4. AR event handlers ────────────────────────────────────────────────────
+function setupAREvents(scene, exp) {
+  scene.addEventListener('arReady', () => {
+    $('loading-screen').classList.add('hidden')
+    $('scan-hint').style.display = 'flex'
+    $('ar-overlay').classList.add('active')
+  })
+
+  scene.addEventListener('arError', (e) => {
+    showError('AR initialisation failed. Please ensure camera access is granted and try in Chrome on Android or Safari on iOS.')
+  })
+
+  const target = scene.querySelector('[mindar-image-target]')
+  if (target) {
+    target.addEventListener('targetFound', () => {
+      targetFound = true
+      $('scan-hint').style.display = 'none'
+
+      // Play video if applicable
+      if (exp.experience_type === 'video') {
+        const vid = document.getElementById('ar-video')
+        if (vid) vid.play().catch(() => {})
+      }
+
+      // Show CTA after a short delay to let experience play
+      setTimeout(() => showCTA(exp), 2500)
+    })
+
+    target.addEventListener('targetLost', () => {
+      targetFound = false
+      $('scan-hint').style.display = 'flex'
+      ctaShown = false
+      $('cta-container').classList.remove('visible')
+      if (exp.experience_type === 'video') {
+        const vid = document.getElementById('ar-video')
+        if (vid) vid.pause()
+      }
+    })
+  }
+}
+
+function showCTA(exp) {
+  if (ctaShown) return
+  ctaShown = true
+
+  const btn = $('btn-cta')
+  btn.textContent = exp.cta_label || 'Open Gift ✦'
+  btn.onclick = () => {
+    if (exp.cta_url) window.open(exp.cta_url, '_blank', 'noopener')
+  }
+
+  $('btn-replay').onclick = () => {
+    ctaShown = false
+    $('cta-container').classList.remove('visible')
+    if (exp.experience_type === 'video') {
+      const vid = document.getElementById('ar-video')
+      if (vid) { vid.currentTime = 0; vid.play().catch(() => {}) }
+    }
+    setTimeout(() => showCTA(exp), 2500)
+  }
+
+  $('btn-share').onclick = async () => {
+    const shareData = {
+      title: 'ARgift — Open your gift!',
+      text: 'Someone sent you an AR gift experience!',
+      url: location.href,
+    }
+    if (navigator.share) {
+      try { await navigator.share(shareData) } catch {}
+    } else {
+      await navigator.clipboard.writeText(location.href)
+      alert('Link copied to clipboard!')
+    }
+  }
+
+  $('cta-container').classList.add('visible')
+}
+
+// ─── 5. Main flow ─────────────────────────────────────────────────────────────
+async function main() {
+  setLoadingStatus('Reading your gift…', 10)
+
+  productId = getProductId()
+  if (!productId) {
+    showError('No product ID found in the URL. Please scan the QR code again or ask the sender to reshare.')
+    return
+  }
+
+  setLoadingStatus('Fetching experience data…', 30)
+  try {
+    experience = await fetchExperience(productId)
+  } catch (err) {
+    showError(err.message)
+    return
+  }
+
+  setLoadingStatus('Loading AR engine…', 60)
+
+  // Check camera permission
+  try {
+    const perm = await navigator.permissions.query({ name: 'camera' })
+    if (perm.state === 'denied') {
+      $('loading-screen').classList.add('hidden')
+      $('permission-screen').style.display = 'flex'
+      return
+    }
+  } catch {}
+
+  await launchAR()
+}
+
+async function launchAR() {
+  setLoadingStatus('Starting camera…', 75)
+
+  try {
+    await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+  } catch (err) {
+    $('loading-screen').classList.add('hidden')
+    $('permission-screen').style.display = 'flex'
+    return
+  }
+
+  setLoadingStatus('Building AR scene…', 90)
+  sceneEl = buildScene(experience)
+  setupAREvents(sceneEl, experience)
+
+  // Start AR after scene is ready
+  sceneEl.addEventListener('loaded', () => {
+    setLoadingStatus('Ready! Point at your product…', 100)
+    const system = sceneEl.systems['mindar-image-system']
+    if (system) system.start()
+  })
+}
+
+$('btn-allow-camera').addEventListener('click', async () => {
+  $('permission-screen').style.display = 'none'
+  $('loading-screen').classList.remove('hidden')
+  await launchAR()
+})
+
+// Boot
+main()
+</script>
+</body>
+</html>
