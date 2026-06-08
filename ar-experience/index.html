@@ -325,7 +325,9 @@ function buildARScene(exp) {
   scene.setAttribute('mindar-image',
     `imageTargetSrc: ${markerUrl}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no; warmupTolerance: 5; missTolerance: 5`)
   // No alpha:true — MindAR renders the camera feed inside the canvas itself
-  scene.setAttribute('renderer', 'colorManagement: true')
+  // alpha:true — canvas background is transparent so MindAR's camera video
+  // (placed behind the canvas via CSS) shows through correctly
+  scene.setAttribute('renderer', 'colorManagement: true; alpha: true')
   scene.setAttribute('vr-mode-ui', 'enabled: false')
   scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
 
@@ -348,10 +350,14 @@ function buildARScene(exp) {
   }
   scene.appendChild(assets)
 
-  // ── Camera — required by A-Frame/MindAR even though MindAR drives it ───────
+  // ── Camera — MindAR MUST have an active camera to inject its AR projection ──
+  // Do NOT set active:false — that makes Three.js ignore this camera and fall
+  // back to a default, which causes AR content to float in the wrong position.
+  // Disable look-controls so the user can't accidentally rotate the view.
   const cam = document.createElement('a-camera')
-  cam.setAttribute('active', 'false')
   cam.setAttribute('position', '0 0 0')
+  cam.setAttribute('look-controls', 'enabled: false')
+  cam.setAttribute('cursor', 'rayOrigin: mouse')
   scene.appendChild(cam)
 
   // ── Image target — ALL content is a child of this entity ──────────────────
