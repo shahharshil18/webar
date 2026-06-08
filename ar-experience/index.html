@@ -94,29 +94,78 @@
     }
     #btn-allow-camera:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(201,147,42,0.5); }
 
-    /* ---- Scan Hint ---- */
+    /* ---- Scan Overlay ---- */
     #scan-hint {
-      position: fixed; bottom: 48px; left: 0; right: 0;
+      position: fixed; inset: 0;
       z-index: 50;
-      display: flex; flex-direction: column; align-items: center; gap: 0;
       pointer-events: none;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-end;
+      padding-bottom: 52px;
+    }
+
+    /* Corner brackets on the full screen */
+    .scan-corner {
+      position: fixed;
+      width: 44px; height: 44px;
+    }
+    .scan-corner.tl { top: 24px; left: 20px;
+      border-top: 3px solid var(--gold); border-left: 3px solid var(--gold); border-radius: 8px 0 0 0; }
+    .scan-corner.tr { top: 24px; right: 20px;
+      border-top: 3px solid var(--gold); border-right: 3px solid var(--gold); border-radius: 0 8px 0 0; }
+    .scan-corner.bl { bottom: 100px; left: 20px;
+      border-bottom: 3px solid var(--gold); border-left: 3px solid var(--gold); border-radius: 0 0 0 8px; }
+    .scan-corner.br { bottom: 100px; right: 20px;
+      border-bottom: 3px solid var(--gold); border-right: 3px solid var(--gold); border-radius: 0 0 8px 0; }
+
+    /* Sweep line across the full screen */
+    .scan-sweep {
+      position: fixed;
+      left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent 0%, var(--gold) 40%, var(--gold-light) 50%, var(--gold) 60%, transparent 100%);
+      animation: sweep 2.2s ease-in-out infinite;
+      box-shadow: 0 0 12px 2px rgba(201,147,42,0.5);
+    }
+    @keyframes sweep {
+      0%   { top: 24px; opacity: 0; }
+      5%   { opacity: 1; }
+      90%  { top: calc(100vh - 104px); opacity: 1; }
+      100% { top: calc(100vh - 104px); opacity: 0; }
+    }
+
+    /* Status pill at bottom */
+    .scan-status-row {
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.12);
+      padding: 9px 18px; border-radius: 30px;
+    }
+    .scan-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--gold);
+      animation: blink 1.2s ease-in-out infinite;
+    }
+    @keyframes blink {
+      0%,100% { opacity: 1; } 50% { opacity: 0.2; }
     }
     .scan-label {
-      font-size: 14px; color: rgba(255,255,255,0.75);
-      text-align: center; letter-spacing: 0.3px;
-      background: rgba(0,0,0,0.4);
-      backdrop-filter: blur(8px);
-      padding: 8px 20px; border-radius: 20px;
+      font-size: 13px; color: rgba(255,255,255,0.85);
+      letter-spacing: 0.3px;
     }
-    .scan-pulse {
-      width: 12px; height: 12px; border-radius: 50%;
-      background: var(--gold);
-      margin-bottom: 10px;
-      animation: pulse-dot 1.5s ease-in-out infinite;
+
+    /* Found flash */
+    #found-flash {
+      position: fixed; inset: 0; z-index: 55;
+      background: rgba(201,147,42,0.25);
+      pointer-events: none;
+      opacity: 0;
     }
-    @keyframes pulse-dot {
-      0%,100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.6); opacity: 0.5; }
+    #found-flash.flash {
+      animation: found-anim 0.5s ease forwards;
+    }
+    @keyframes found-anim {
+      0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; }
     }
 
     /* ---- Fullscreen Media Overlay ---- */
@@ -289,10 +338,20 @@
 <!-- Our camera feed (always visible behind UI) -->
 <video id="camera-feed" autoplay playsinline webkit-playsinline muted></video>
 
-<!-- Scan Hint (shown when AR is active but no target found yet) -->
+<!-- Found flash -->
+<div id="found-flash"></div>
+
+<!-- Scan Overlay (shown while scanning) -->
 <div id="scan-hint">
-  <div class="scan-pulse"></div>
-  <p class="scan-label">Point camera at the product ✦</p>
+  <div class="scan-corner tl"></div>
+  <div class="scan-corner tr"></div>
+  <div class="scan-corner bl"></div>
+  <div class="scan-corner br"></div>
+  <div class="scan-sweep"></div>
+  <div class="scan-status-row">
+    <div class="scan-dot"></div>
+    <span class="scan-label" id="scan-label-text">Scanning for product…</span>
+  </div>
 </div>
 
 <!-- A-Frame AR Scene (built dynamically) -->
@@ -505,8 +564,17 @@ function setupAREvents(scene, exp) {
   if (target) {
     target.addEventListener('targetFound', () => {
       targetFound = true
-      $('scan-hint').style.display = 'none'
-      showMediaOverlay(exp)
+      // Flash gold to signal detection
+      const flash = $('found-flash')
+      flash.classList.remove('flash')
+      void flash.offsetWidth // reflow
+      flash.classList.add('flash')
+      // Update label briefly then hide scan overlay
+      $('scan-label-text').textContent = '✦ Product found!'
+      setTimeout(() => {
+        $('scan-hint').style.display = 'none'
+        showMediaOverlay(exp)
+      }, 400)
     })
 
     target.addEventListener('targetLost', () => {
@@ -561,6 +629,7 @@ function showMediaOverlay(exp) {
   $('btn-close').onclick = () => {
     overlay.classList.remove('active')
     vid.pause()
+    $('scan-label-text').textContent = 'Scanning for product…'
     $('scan-hint').style.display = 'flex'
     ctaShown = false
   }
