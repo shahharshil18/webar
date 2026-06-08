@@ -440,8 +440,19 @@ function buildARScene(exp) {
     forest:   { color: '#c8f5c8', bg: '#1a3a1a' },
   }[exp.template_id] || { color: '#f0c060', bg: '#000' }
 
+  // ── Gold border frame (slightly larger than content) ──────────────────────
+  const border = document.createElement('a-plane')
+  border.setAttribute('data-border', '')
+  border.setAttribute('width',  planeW + 0.04)
+  border.setAttribute('height', planeH + 0.04)
+  border.setAttribute('position', '0 0 -0.001')
+  border.setAttribute('material', 'color: #c9932a; shader: flat; side: double')
+  target.appendChild(border)
+
+  // ── Content ───────────────────────────────────────────────────────────────
   if (exp.experience_type === 'video' && exp.media_url) {
     const el = document.createElement('a-video')
+    el.setAttribute('data-content', '')
     el.setAttribute('src', '#ar-video')
     el.setAttribute('width', planeW)
     el.setAttribute('height', planeH)
@@ -453,6 +464,7 @@ function buildARScene(exp) {
     const url = exp.media_urls?.[0] || exp.media_url
     if (url) {
       const el = document.createElement('a-plane')
+      el.setAttribute('data-content', '')
       el.setAttribute('src', url)
       el.setAttribute('width', planeW)
       el.setAttribute('height', planeH)
@@ -464,6 +476,7 @@ function buildARScene(exp) {
 
   if (exp.experience_type === 'text') {
     const bg = document.createElement('a-plane')
+    bg.setAttribute('data-content', '')
     bg.setAttribute('width', planeW); bg.setAttribute('height', planeH)
     bg.setAttribute('position', '0 0 0')
     bg.setAttribute('material', `color: ${tpl.bg}; opacity: 0.9; transparent: true; shader: flat`)
@@ -552,7 +565,18 @@ function setupAREvents(scene, exp) {
   scene.addEventListener('arReady', () => {
     $('loading-screen').classList.add('hidden')
     $('scan-hint').style.display = 'flex'
+
+    // ── Read real aspect ratio from MindAR compiled target ──────────────────
+    try {
+      const sys = scene.systems['mindar-image-system']
+      const t   = sys?.controller?.targets?.[0]
+      if (t && t.height && t.width) {
+        const realAR = t.height / t.width
+        resizeARContent(scene, realAR)
+      }
+    } catch(e) {}
   })
+
   scene.addEventListener('arError', () => {
     showError('AR failed. Use Chrome on Android or Safari on iOS.')
   })
@@ -566,7 +590,7 @@ function setupAREvents(scene, exp) {
     $('scan-label-text').textContent = '✦ Product found!'
     setTimeout(() => { $('scan-hint').style.display = 'none' }, 400)
 
-    // Play video on the marker — muted autoplay always works, then unmute
+    // Auto-play video muted → immediately unmute
     if (exp.experience_type === 'video') {
       const vid = document.getElementById('ar-video')
       if (vid) {
@@ -575,17 +599,32 @@ function setupAREvents(scene, exp) {
         vid.play().then(() => { vid.muted = false }).catch(() => {})
       }
     }
-
-    // Show bottom CTA bar
     showCTABar(exp)
   })
 
   target.addEventListener('targetLost', () => {
     $('scan-label-text').textContent = 'Scanning for product…'
     $('scan-hint').style.display = 'flex'
-    if (exp.experience_type === 'video') { const v = document.getElementById('ar-video'); if (v) v.pause() }
+    if (exp.experience_type === 'video') {
+      const v = document.getElementById('ar-video'); if (v) v.pause()
+    }
     hideCTABar()
   })
+}
+
+// Resize content plane + border to match the real marker aspect ratio
+function resizeARContent(scene, ar) {
+  const W = 1, H = ar
+  const content = scene.querySelector('[mindar-image-target] [data-content]')
+  const border  = scene.querySelector('[mindar-image-target] [data-border]')
+  if (content) {
+    content.setAttribute('width',  W)
+    content.setAttribute('height', H)
+  }
+  if (border) {
+    border.setAttribute('width',  W  + 0.04)
+    border.setAttribute('height', H  + 0.04)
+  }
 }
 
 function showCTABar(exp) {
