@@ -315,11 +315,11 @@ async function fetchExperience(pid) {
 function buildARScene(exp) {
   const markerUrl = exp.marker_url || 'targets/default.mind'
 
-  // Initial dimensions — width=1 (MindAR unit = marker width), height = aspect ratio
-  // If saved ratio is wrong (default 1), resizeARContent() corrects it after arReady
-  const savedAR = parseFloat(exp.marker_aspect_ratio) || 1
-  const planeW  = 1
-  const planeH  = savedAR
+  // width=1 always (MindAR normalises marker width to 1 unit).
+  // height = marker_aspect_ratio saved by the user in the dashboard.
+  // applyMarkerAspectRatio() refines this after arReady if better data is available.
+  const planeW = 1
+  const planeH = parseFloat(exp.marker_aspect_ratio) || 1
 
   const scene = document.createElement('a-scene')
   scene.setAttribute('mindar-image',
@@ -484,10 +484,9 @@ async function applyMarkerAspectRatio(scene, exp) {
     } catch (_) {}
   }
 
-  // ── Source 3: DB-saved ratio (fallback, may be stale default of 1) ────────
+  // ── Source 3: DB-saved ratio — always apply, user explicitly chose this ─────
   const saved = parseFloat(exp.marker_aspect_ratio)
-  if (saved > 0 && saved !== 1) resizeARContent(scene, saved)
-  // If saved === 1 we leave the plane as-is (1×1) rather than squashing it
+  if (saved > 0) resizeARContent(scene, saved)
 }
 
 // ─── Resize content to exact aspect ratio once MindAR reports real dimensions ─

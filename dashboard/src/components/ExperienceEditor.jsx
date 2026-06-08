@@ -639,6 +639,61 @@ function MarkerTab({ form, set, userId, productId }) {
           style={{ display: 'none' }} onChange={handleMarkerImage} />
       </div>
 
+      {/* ── Aspect ratio picker ─────────────────────────────────────────── */}
+      <div className="field-group">
+        <label className="field-label">Marker Shape / Aspect Ratio</label>
+        <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 6, lineHeight: 1.5 }}>
+          Choose the shape that matches your printed marker image so the AR video fills it exactly.
+        </p>
+        <div className="ratio-grid">
+          {[
+            { label: '1 : 1',   hint: 'Square',          value: 1          },
+            { label: '3 : 4',   hint: 'Portrait card',   value: 4/3        },
+            { label: '4 : 3',   hint: 'Landscape card',  value: 3/4        },
+            { label: '9 : 16',  hint: 'Phone portrait',  value: 16/9       },
+            { label: '16 : 9',  hint: 'Widescreen',      value: 9/16       },
+            { label: 'A4',      hint: '210 × 297 mm',    value: 297/210    },
+          ].map(({ label, hint, value }) => {
+            const active = Math.abs(parseFloat(form.marker_aspect_ratio) - value) < 0.02
+            return (
+              <button
+                key={label}
+                type="button"
+                className={`ratio-btn ${active ? 'ratio-active' : ''}`}
+                onClick={() => set('marker_aspect_ratio', value)}
+              >
+                <span className="ratio-label">{label}</span>
+                <span className="ratio-hint">{hint}</span>
+              </button>
+            )
+          })}
+        </div>
+        {/* Custom numeric input */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>Custom (height ÷ width):</span>
+          <input
+            type="number"
+            step="0.01"
+            min="0.1"
+            max="5"
+            value={parseFloat(form.marker_aspect_ratio).toFixed(3)}
+            onChange={e => {
+              const v = parseFloat(e.target.value)
+              if (v > 0) set('marker_aspect_ratio', v)
+            }}
+            style={{
+              width: 90, padding: '5px 8px', borderRadius: 6,
+              border: '1px solid var(--border-strong)',
+              background: 'var(--surface-2)', color: 'var(--ink-1)',
+              fontSize: 13,
+            }}
+          />
+          <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+            e.g. 1.414 for A4 portrait
+          </span>
+        </div>
+      </div>
+
       {form.marker_url && (
         <div className="marker-saved">
           <span>✓ Marker compiled and saved</span>
@@ -694,6 +749,24 @@ function MarkerTab({ form, set, userId, productId }) {
           font-size: 13px; font-weight: 600; color: var(--teal);
         }
         .marker-link { font-size: 11px; color: var(--ink-3); text-decoration: underline; }
+        .ratio-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+        }
+        .ratio-btn {
+          display: flex; flex-direction: column; align-items: center; gap: 2px;
+          padding: 10px 6px;
+          border: 1.5px solid var(--border-strong);
+          border-radius: var(--r-sm);
+          background: var(--surface-3);
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .ratio-btn:hover { border-color: var(--gold); background: var(--gold-pale); }
+        .ratio-active { border-color: var(--gold) !important; background: var(--gold-pale) !important; box-shadow: 0 0 0 2px rgba(201,147,42,0.25); }
+        .ratio-label { font-size: 13px; font-weight: 700; color: var(--ink-1); }
+        .ratio-hint  { font-size: 10px; color: var(--ink-3); }
         .marker-tips {
           background: var(--surface-3);
           border: 1px solid var(--border);
