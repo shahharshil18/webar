@@ -16,6 +16,7 @@ export default function ExperienceEditor({ experience, userId, onSaved, onCancel
     media_url: experience.media_url || '',
     media_urls: experience.media_urls || [],
     marker_url: experience.marker_url || '',
+    marker_aspect_ratio: experience.marker_aspect_ratio || 1,
   })
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -62,6 +63,7 @@ export default function ExperienceEditor({ experience, userId, onSaved, onCancel
         media_url: form.media_url,
         media_urls: form.media_urls,
         marker_url: form.marker_url,
+        marker_aspect_ratio: form.marker_aspect_ratio,
       }
       const saved = await saveExperience(userId, experience.product_id, payload)
       onSaved(saved)
@@ -570,6 +572,8 @@ function MarkerTab({ form, set, userId, productId }) {
       setStatus('uploading')
       const url = await uploadMarkerMind(userId, productId, buffer)
       set('marker_url', url)
+      // Save aspect ratio so AR plane matches marker exactly
+      set('marker_aspect_ratio', img.naturalHeight / img.naturalWidth)
       setStatus('done')
     } catch (err) {
       setStatus('error')

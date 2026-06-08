@@ -388,79 +388,98 @@ function preloadMedia(exp) {
   preloadedVideo = v
 }
 
-// ─── 3. Build AR scene with video/photo/text on marker ───────────────────────
+// ─── 3. Build AR scene — content locked to marker bounds ─────────────────────
 function buildARScene(exp) {
   const markerUrl = exp.marker_url || 'targets/default.mind'
+  // Plane dimensions: width always 1 (MindAR unit = marker width)
+  // height = marker aspect ratio (height/width) so content fills marker exactly
+  const ar = parseFloat(exp.marker_aspect_ratio) || 1
+  const planeW = 1
+  const planeH = ar  // e.g. portrait A4 ≈ 1.414, landscape 16:9 ≈ 0.5625
+
   const scene = document.createElement('a-scene')
-  scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no; warmupTolerance: 5; missTolerance: 5`)
+  scene.setAttribute('mindar-image',
+    `imageTargetSrc: ${markerUrl}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no; warmupTolerance: 5; missTolerance: 5`)
   scene.setAttribute('renderer', 'colorManagement: true; alpha: true')
   scene.setAttribute('vr-mode-ui', 'enabled: false')
   scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
 
-  // Assets — register video for A-Frame texture
+  // ── Assets ──────────────────────────────────────────────────────────────────
   const assets = document.createElement('a-assets')
-  assets.setAttribute('timeout', '15000')
-  if (exp.experience_type === 'video' && preloadedVideo) {
-    // Reuse the already-playing preloaded video as A-Frame asset
-    preloadedVideo.id = 'ar-video'
-    assets.appendChild(preloadedVideo)
+  assets.setAttribute('timeout', '20000')
+
+  if (exp.experience_type === 'video' && exp.media_url) {
+    const vid = document.createElement('video')
+    vid.id = 'ar-video'
+    vid.src = exp.media_url
+    vid.loop = true
+    vid.muted = true          // start muted so autoplay works
+    vid.playsInline = true
+    vid.setAttribute('playsinline', '')
+    vid.setAttribute('webkit-playsinline', '')
+    vid.setAttribute('crossorigin', 'anonymous')
+    vid.preload = 'auto'
+    assets.appendChild(vid)
   }
   scene.appendChild(assets)
 
+  // ── Camera ──────────────────────────────────────────────────────────────────
   const cam = document.createElement('a-camera')
   cam.setAttribute('active', 'false')
+  cam.setAttribute('position', '0 0 0')
   scene.appendChild(cam)
 
+  // ── Target entity ────────────────────────────────────────────────────────────
   const target = document.createElement('a-entity')
   target.setAttribute('mindar-image-target', 'targetIndex: 0')
 
-  const templateConfig = {
+  const tpl = {
     golden:   { color: '#f0c060', bg: '#1a0a00' },
     midnight: { color: '#c8d8ff', bg: '#0a0f1e' },
     sakura:   { color: '#4a1530', bg: '#ffd6e7' },
     forest:   { color: '#c8f5c8', bg: '#1a3a1a' },
   }[exp.template_id] || { color: '#f0c060', bg: '#000' }
 
-  if (exp.experience_type === 'video' && preloadedVideo) {
-    const videoEl = document.createElement('a-video')
-    videoEl.setAttribute('src', '#ar-video')
-    videoEl.setAttribute('position', '0 0 0')
-    videoEl.setAttribute('width', '1')
-    videoEl.setAttribute('height', '0.5625')  // 16:9
-    target.appendChild(videoEl)
+  if (exp.experience_type === 'video' && exp.media_url) {
+    const el = document.createElement('a-video')
+    el.setAttribute('src', '#ar-video')
+    el.setAttribute('width', planeW)
+    el.setAttribute('height', planeH)
+    el.setAttribute('position', '0 0 0.001')
+    target.appendChild(el)
   }
 
   if (exp.experience_type === 'photo') {
     const url = exp.media_urls?.[0] || exp.media_url
     if (url) {
-      const plane = document.createElement('a-plane')
-      plane.setAttribute('src', url)
-      plane.setAttribute('width', '1')
-      plane.setAttribute('height', '1')
-      plane.setAttribute('position', '0 0 0')
-      plane.setAttribute('material', 'transparent: false')
-      target.appendChild(plane)
+      const el = document.createElement('a-plane')
+      el.setAttribute('src', url)
+      el.setAttribute('width', planeW)
+      el.setAttribute('height', planeH)
+      el.setAttribute('position', '0 0 0.001')
+      el.setAttribute('material', 'transparent: false; shader: flat')
+      target.appendChild(el)
     }
   }
 
   if (exp.experience_type === 'text') {
     const bg = document.createElement('a-plane')
-    bg.setAttribute('width', '1'); bg.setAttribute('height', '1')
+    bg.setAttribute('width', planeW); bg.setAttribute('height', planeH)
     bg.setAttribute('position', '0 0 0')
-    bg.setAttribute('material', `color: ${templateConfig.bg}; opacity: 0.85; transparent: true`)
+    bg.setAttribute('material', `color: ${tpl.bg}; opacity: 0.9; transparent: true; shader: flat`)
     target.appendChild(bg)
     const txt = document.createElement('a-text')
     txt.setAttribute('value', exp.text_message || 'A gift for you ✦')
-    txt.setAttribute('color', templateConfig.color)
+    txt.setAttribute('color', tpl.color)
     txt.setAttribute('align', 'center')
-    txt.setAttribute('width', '0.9')
-    txt.setAttribute('position', '0 0 0.01')
-    txt.setAttribute('wrap-count', '22')
+    txt.setAttribute('width', '0.85')
+    txt.setAttribute('position', '0 0 0.002')
+    txt.setAttribute('wrap-count', '20')
     target.appendChild(txt)
   }
 
   const light = document.createElement('a-light')
-  light.setAttribute('type', 'ambient'); light.setAttribute('intensity', '1.5')
+  light.setAttribute('type', 'ambient'); light.setAttribute('intensity', '2')
   scene.appendChild(light)
   scene.appendChild(target)
   $('aframe-container').appendChild(scene)
@@ -547,11 +566,14 @@ function setupAREvents(scene, exp) {
     $('scan-label-text').textContent = '✦ Product found!'
     setTimeout(() => { $('scan-hint').style.display = 'none' }, 400)
 
-    // Play video on the marker
-    if (exp.experience_type === 'video' && preloadedVideo) {
-      preloadedVideo.currentTime = 0
-      preloadedVideo.muted = false
-      preloadedVideo.play().catch(() => { preloadedVideo.muted = true; preloadedVideo.play().catch(() => {}) })
+    // Play video on the marker — muted autoplay always works, then unmute
+    if (exp.experience_type === 'video') {
+      const vid = document.getElementById('ar-video')
+      if (vid) {
+        vid.currentTime = 0
+        vid.muted = true
+        vid.play().then(() => { vid.muted = false }).catch(() => {})
+      }
     }
 
     // Show bottom CTA bar
@@ -561,7 +583,7 @@ function setupAREvents(scene, exp) {
   target.addEventListener('targetLost', () => {
     $('scan-label-text').textContent = 'Scanning for product…'
     $('scan-hint').style.display = 'flex'
-    if (exp.experience_type === 'video' && preloadedVideo) preloadedVideo.pause()
+    if (exp.experience_type === 'video') { const v = document.getElementById('ar-video'); if (v) v.pause() }
     hideCTABar()
   })
 }
@@ -575,7 +597,8 @@ function showCTABar(exp) {
     btnCta.onclick = () => window.open(exp.cta_url, '_blank', 'noopener')
   }
   $('btn-replay').onclick = () => {
-    if (preloadedVideo) { preloadedVideo.currentTime = 0; preloadedVideo.muted = false; preloadedVideo.play().catch(() => {}) }
+    const v = document.getElementById('ar-video')
+    if (v) { v.currentTime = 0; v.muted = false; v.play().catch(() => {}) }
   }
   $('btn-share').onclick = async () => {
     if (navigator.share) { try { await navigator.share({ title: 'ARgift', url: location.href }) } catch {} }
