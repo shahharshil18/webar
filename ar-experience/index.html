@@ -328,7 +328,6 @@ function buildARScene(exp) {
   scene.setAttribute('renderer', 'colorManagement: true')
   scene.setAttribute('vr-mode-ui', 'enabled: false')
   scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
-  scene.setAttribute('embedded', '')
 
   // ── Assets ──────────────────────────────────────────────────────────────────
   const assets = document.createElement('a-assets')
@@ -348,6 +347,12 @@ function buildARScene(exp) {
     assets.appendChild(vid)
   }
   scene.appendChild(assets)
+
+  // ── Camera — required by A-Frame/MindAR even though MindAR drives it ───────
+  const cam = document.createElement('a-camera')
+  cam.setAttribute('active', 'false')
+  cam.setAttribute('position', '0 0 0')
+  scene.appendChild(cam)
 
   // ── Image target — ALL content is a child of this entity ──────────────────
   // MindAR automatically shows/hides this entity when marker is found/lost.
