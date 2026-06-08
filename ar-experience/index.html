@@ -168,28 +168,17 @@
       0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; }
     }
 
-    /* ---- Fullscreen overlay ---- */
-    #media-overlay {
-      position: fixed; inset: 0; z-index: 60;
-      background: #000;
-      display: none; flex-direction: column;
-      align-items: stretch; justify-content: center;
-    }
-    #media-overlay.active { display: flex; }
-    #overlay-text-msg {
-      font-family: var(--font-display);
-      font-size: clamp(24px, 7vw, 48px);
-      color: var(--gold-light);
-      line-height: 1.4;
-      text-shadow: 0 0 40px rgba(240,192,96,0.6);
-    }
-    #overlay-controls {
-      position: absolute; bottom: 0; left: 0; right: 0;
-      padding: 20px 24px 40px;
+    /* ---- CTA bar ---- */
+    #cta-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
+      padding: 16px 24px 36px;
       display: flex; flex-direction: column; align-items: center; gap: 12px;
-      background: linear-gradient(transparent, rgba(0,0,0,0.75));
-      pointer-events: all;
+      background: linear-gradient(transparent, rgba(0,0,0,0.65));
+      pointer-events: none;
+      opacity: 0; transform: translateY(16px);
+      transition: opacity 0.35s ease, transform 0.35s ease;
     }
+    #cta-bar.visible { opacity: 1; transform: translateY(0); pointer-events: all; }
 
     /* ---- AR Overlay UI ---- */
     #ar-overlay {
@@ -340,20 +329,12 @@
 <!-- A-Frame AR Scene (built dynamically) -->
 <div id="aframe-container"></div>
 
-<!-- Fullscreen overlay (shown when marker detected) -->
-<div id="media-overlay">
-  <video id="overlay-video" playsinline webkit-playsinline loop style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"></video>
-  <img id="overlay-photo" alt="" style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;" />
-  <div id="overlay-text" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;padding:40px;text-align:center;">
-    <p id="overlay-text-msg"></p>
-  </div>
-  <div id="overlay-controls">
-    <button id="btn-cta" style="display:none">Open Gift</button>
-    <div class="ar-secondary-btns">
-      <button class="ar-sec-btn" id="btn-replay">↺ Replay</button>
-      <button class="ar-sec-btn" id="btn-share">⇧ Share</button>
-      <button class="ar-sec-btn" id="btn-close">✕ Scan again</button>
-    </div>
+<!-- CTA bar (slides up when marker found) -->
+<div id="cta-bar">
+  <button id="btn-cta" style="display:none">Open Gift</button>
+  <div class="ar-secondary-btns">
+    <button class="ar-sec-btn" id="btn-replay">↺ Replay</button>
+    <button class="ar-sec-btn" id="btn-share">⇧ Share</button>
   </div>
 </div>
 
@@ -407,19 +388,80 @@ function preloadMedia(exp) {
   preloadedVideo = v
 }
 
-// ─── 3. Build MindAR scene (tracking only, hidden) ───────────────────────────
-function buildTrackingScene(exp) {
+// ─── 3. Build AR scene with video/photo/text on marker ───────────────────────
+function buildARScene(exp) {
   const markerUrl = exp.marker_url || 'targets/default.mind'
   const scene = document.createElement('a-scene')
   scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no; warmupTolerance: 5; missTolerance: 5`)
   scene.setAttribute('renderer', 'colorManagement: true; alpha: true')
   scene.setAttribute('vr-mode-ui', 'enabled: false')
   scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
+
+  // Assets — register video for A-Frame texture
+  const assets = document.createElement('a-assets')
+  assets.setAttribute('timeout', '15000')
+  if (exp.experience_type === 'video' && preloadedVideo) {
+    // Reuse the already-playing preloaded video as A-Frame asset
+    preloadedVideo.id = 'ar-video'
+    assets.appendChild(preloadedVideo)
+  }
+  scene.appendChild(assets)
+
   const cam = document.createElement('a-camera')
   cam.setAttribute('active', 'false')
   scene.appendChild(cam)
+
   const target = document.createElement('a-entity')
   target.setAttribute('mindar-image-target', 'targetIndex: 0')
+
+  const templateConfig = {
+    golden:   { color: '#f0c060', bg: '#1a0a00' },
+    midnight: { color: '#c8d8ff', bg: '#0a0f1e' },
+    sakura:   { color: '#4a1530', bg: '#ffd6e7' },
+    forest:   { color: '#c8f5c8', bg: '#1a3a1a' },
+  }[exp.template_id] || { color: '#f0c060', bg: '#000' }
+
+  if (exp.experience_type === 'video' && preloadedVideo) {
+    const videoEl = document.createElement('a-video')
+    videoEl.setAttribute('src', '#ar-video')
+    videoEl.setAttribute('position', '0 0 0')
+    videoEl.setAttribute('width', '1')
+    videoEl.setAttribute('height', '0.5625')  // 16:9
+    target.appendChild(videoEl)
+  }
+
+  if (exp.experience_type === 'photo') {
+    const url = exp.media_urls?.[0] || exp.media_url
+    if (url) {
+      const plane = document.createElement('a-plane')
+      plane.setAttribute('src', url)
+      plane.setAttribute('width', '1')
+      plane.setAttribute('height', '1')
+      plane.setAttribute('position', '0 0 0')
+      plane.setAttribute('material', 'transparent: false')
+      target.appendChild(plane)
+    }
+  }
+
+  if (exp.experience_type === 'text') {
+    const bg = document.createElement('a-plane')
+    bg.setAttribute('width', '1'); bg.setAttribute('height', '1')
+    bg.setAttribute('position', '0 0 0')
+    bg.setAttribute('material', `color: ${templateConfig.bg}; opacity: 0.85; transparent: true`)
+    target.appendChild(bg)
+    const txt = document.createElement('a-text')
+    txt.setAttribute('value', exp.text_message || 'A gift for you ✦')
+    txt.setAttribute('color', templateConfig.color)
+    txt.setAttribute('align', 'center')
+    txt.setAttribute('width', '0.9')
+    txt.setAttribute('position', '0 0 0.01')
+    txt.setAttribute('wrap-count', '22')
+    target.appendChild(txt)
+  }
+
+  const light = document.createElement('a-light')
+  light.setAttribute('type', 'ambient'); light.setAttribute('intensity', '1.5')
+  scene.appendChild(light)
   scene.appendChild(target)
   $('aframe-container').appendChild(scene)
   return scene
@@ -500,19 +542,50 @@ function setupAREvents(scene, exp) {
   if (!target) return
 
   target.addEventListener('targetFound', () => {
-    // Flash
     const flash = $('found-flash')
     flash.classList.remove('flash'); void flash.offsetWidth; flash.classList.add('flash')
     $('scan-label-text').textContent = '✦ Product found!'
-    setTimeout(() => {
-      $('scan-hint').style.display = 'none'
-      showOverlay(exp)
-    }, 300)
+    setTimeout(() => { $('scan-hint').style.display = 'none' }, 400)
+
+    // Play video on the marker
+    if (exp.experience_type === 'video' && preloadedVideo) {
+      preloadedVideo.currentTime = 0
+      preloadedVideo.muted = false
+      preloadedVideo.play().catch(() => { preloadedVideo.muted = true; preloadedVideo.play().catch(() => {}) })
+    }
+
+    // Show bottom CTA bar
+    showCTABar(exp)
   })
 
   target.addEventListener('targetLost', () => {
-    // Keep overlay open — user can close manually
+    $('scan-label-text').textContent = 'Scanning for product…'
+    $('scan-hint').style.display = 'flex'
+    if (exp.experience_type === 'video' && preloadedVideo) preloadedVideo.pause()
+    hideCTABar()
   })
+}
+
+function showCTABar(exp) {
+  const bar = $('cta-bar')
+  const btnCta = $('btn-cta')
+  if (exp.cta_label && exp.cta_url) {
+    btnCta.textContent = exp.cta_label
+    btnCta.style.display = 'inline-flex'
+    btnCta.onclick = () => window.open(exp.cta_url, '_blank', 'noopener')
+  }
+  $('btn-replay').onclick = () => {
+    if (preloadedVideo) { preloadedVideo.currentTime = 0; preloadedVideo.muted = false; preloadedVideo.play().catch(() => {}) }
+  }
+  $('btn-share').onclick = async () => {
+    if (navigator.share) { try { await navigator.share({ title: 'ARgift', url: location.href }) } catch {} }
+    else { navigator.clipboard.writeText(location.href); alert('Link copied!') }
+  }
+  bar.classList.add('visible')
+}
+
+function hideCTABar() {
+  $('cta-bar').classList.remove('visible')
 }
 
 // ─── 6. Main ──────────────────────────────────────────────────────────────────
@@ -552,7 +625,7 @@ async function launchAR() {
   preloadMedia(experience)
 
   setStatus('Loading AR tracker…', 85)
-  sceneEl = buildTrackingScene(experience)
+  sceneEl = buildARScene(experience)
   setupAREvents(sceneEl, experience)
 
   sceneEl.addEventListener('loaded', () => {
