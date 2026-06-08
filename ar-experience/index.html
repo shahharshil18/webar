@@ -384,7 +384,8 @@ function buildARScene(exp) {
     el.setAttribute('src', '#ar-video')
     el.setAttribute('width',    planeW.toString())
     el.setAttribute('height',   planeH.toString())
-    el.setAttribute('position', '0 0 0')
+    el.setAttribute('position', '0 0 0.001')  // tiny Z lift prevents z-fighting
+    el.setAttribute('rotation', '0 0 0')
     target.appendChild(el)
   }
 
@@ -396,7 +397,8 @@ function buildARScene(exp) {
       el.setAttribute('src', url)
       el.setAttribute('width',    planeW.toString())
       el.setAttribute('height',   planeH.toString())
-      el.setAttribute('position', '0 0 0')
+      el.setAttribute('position', '0 0 0.001')
+      el.setAttribute('rotation', '0 0 0')
       el.setAttribute('material', 'transparent: false; shader: flat; side: double')
       target.appendChild(el)
     }
@@ -414,7 +416,8 @@ function buildARScene(exp) {
     bg.setAttribute('data-ar-content', '')
     bg.setAttribute('width',    planeW.toString())
     bg.setAttribute('height',   planeH.toString())
-    bg.setAttribute('position', '0 0 0')
+    bg.setAttribute('position', '0 0 0.001')
+    bg.setAttribute('rotation', '0 0 0')
     bg.setAttribute('material', `color: ${tpl.bg}; opacity: 0.9; transparent: true; shader: flat`)
     target.appendChild(bg)
 
@@ -423,7 +426,8 @@ function buildARScene(exp) {
     txt.setAttribute('color', tpl.color)
     txt.setAttribute('align', 'center')
     txt.setAttribute('width', '0.85')
-    txt.setAttribute('position', '0 0 0.002')
+    txt.setAttribute('position', '0 0 0.003')
+    txt.setAttribute('rotation', '0 0 0')
     txt.setAttribute('wrap-count', '20')
     target.appendChild(txt)
   }
@@ -441,17 +445,19 @@ function buildARScene(exp) {
 // ─── Resize content to exact aspect ratio once MindAR reports real dimensions ─
 function resizeARContent(scene, realAR) {
   const W = 1, H = realAR
-  // Use setAttribute on component names (A-Frame primitive mapping)
   const content = scene.querySelector('[data-ar-content]')
   const border  = scene.querySelector('[data-ar-border]')
   if (content) {
-    // For a-video / a-plane, width + height attributes map to geometry component
-    content.setAttribute('width',  W)
-    content.setAttribute('height', H)
+    content.setAttribute('width',    W)
+    content.setAttribute('height',   H)
+    content.setAttribute('position', '0 0 0.001')
+    content.setAttribute('rotation', '0 0 0')
   }
   if (border) {
-    border.setAttribute('width',  W + 0.04)
-    border.setAttribute('height', H + 0.04)
+    // Border sits just behind content; hide it when content fills the marker exactly
+    border.setAttribute('width',    W + 0.02)
+    border.setAttribute('height',   H + 0.02)
+    border.setAttribute('position', '0 0 -0.001')
   }
 }
 
@@ -461,20 +467,28 @@ function setupAREvents(scene, exp) {
     $('loading-screen').classList.add('hidden')
     $('scan-hint').style.display = 'flex'
 
-    // Auto-detect real aspect ratio from MindAR compiled target data
+    // Read the real aspect ratio straight from the already-parsed .mind data.
+    // MindAR loads this during init — no extra network request needed.
     try {
-      const sys = scene.systems?.['mindar-image-system']
-      const ctrl = sys?.controller
-      // Try known property paths across MindAR versions
-      const t = ctrl?.imageList?.[0] || ctrl?.targets?.[0]
+      const ctrl = scene.systems['mindar-image-system'].controller
+      // MindAR 1.x stores parsed targets in controller.imageTargets[]
+      const t = ctrl.imageTargets?.[0]
       if (t) {
-        const h = t.imageHeight ?? t.height ?? t.originalHeight
-        const w = t.imageWidth  ?? t.width  ?? t.originalWidth
-        if (h && w && h > 0 && w > 0) {
+        const h = t.imageHeight ?? t.height
+        const w = t.imageWidth  ?? t.width
+        if (h > 0 && w > 0) {
           resizeARContent(scene, h / w)
+          return
         }
       }
-    } catch (e) {}
+      // Fallback: some builds expose it on controller.targets[]
+      const t2 = ctrl.targets?.[0]
+      if (t2) {
+        const h = t2.imageHeight ?? t2.height
+        const w = t2.imageWidth  ?? t2.width
+        if (h > 0 && w > 0) resizeARContent(scene, h / w)
+      }
+    } catch (e) { /* keep stored ratio */ }
   })
 
   scene.addEventListener('arError', () => {
