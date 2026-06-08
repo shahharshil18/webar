@@ -96,36 +96,69 @@
 
     /* ---- Scan Hint ---- */
     #scan-hint {
-      position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+      position: fixed; bottom: 48px; left: 0; right: 0;
       z-index: 50;
-      display: flex; flex-direction: column; align-items: center; gap: 10px;
+      display: flex; flex-direction: column; align-items: center; gap: 0;
       pointer-events: none;
     }
-    .scan-frame {
-      width: 200px; height: 200px;
-      border: 2px solid rgba(255,255,255,0.3);
-      border-radius: 16px;
-      position: relative;
+    .scan-label {
+      font-size: 14px; color: rgba(255,255,255,0.75);
+      text-align: center; letter-spacing: 0.3px;
+      background: rgba(0,0,0,0.4);
+      backdrop-filter: blur(8px);
+      padding: 8px 20px; border-radius: 20px;
     }
-    .scan-frame::before, .scan-frame::after {
-      content: ''; position: absolute;
-      width: 40px; height: 40px;
+    .scan-pulse {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: var(--gold);
+      margin-bottom: 10px;
+      animation: pulse-dot 1.5s ease-in-out infinite;
     }
-    .scan-frame::before { top: -2px; left: -2px; border-top: 3px solid var(--gold); border-left: 3px solid var(--gold); border-radius: 12px 0 0 0; }
-    .scan-frame::after { bottom: -2px; right: -2px; border-bottom: 3px solid var(--gold); border-right: 3px solid var(--gold); border-radius: 0 0 12px 0; }
+    @keyframes pulse-dot {
+      0%,100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.6); opacity: 0.5; }
+    }
 
-    .scan-line {
-      position: absolute; left: 10px; right: 10px; height: 2px;
-      background: linear-gradient(90deg, transparent, var(--gold), transparent);
-      top: 0;
-      animation: scan 2s ease-in-out infinite;
+    /* ---- Fullscreen Media Overlay ---- */
+    #media-overlay {
+      position: fixed; inset: 0; z-index: 60;
+      background: #000;
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      animation: fade-in 0.4s ease;
     }
-    @keyframes scan {
-      0% { top: 10%; opacity: 1; }
-      90% { top: 85%; opacity: 1; }
-      100% { top: 85%; opacity: 0; }
+    #media-overlay.active { display: flex; }
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+    #overlay-video {
+      width: 100%; height: 100%;
+      object-fit: cover;
     }
-    .scan-label { font-size: 13px; color: rgba(255,255,255,0.6); text-align: center; letter-spacing: 0.3px; }
+    #overlay-photo {
+      width: 100%; height: 100%;
+      object-fit: contain;
+      display: none;
+    }
+    #overlay-text {
+      display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      padding: 40px; text-align: center;
+    }
+    #overlay-text-msg {
+      font-family: var(--font-display);
+      font-size: clamp(22px, 6vw, 44px);
+      color: var(--gold-light);
+      line-height: 1.4;
+      text-shadow: 0 0 40px rgba(240,192,96,0.5);
+    }
+    /* close / CTA row on overlay */
+    #overlay-controls {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      padding: 24px 24px 40px;
+      display: flex; flex-direction: column; align-items: center; gap: 12px;
+      background: linear-gradient(transparent, rgba(0,0,0,0.7));
+      pointer-events: all;
+    }
 
     /* ---- AR Overlay UI ---- */
     #ar-overlay {
@@ -262,29 +295,26 @@
 
 <!-- Scan Hint (shown when AR is active but no target found yet) -->
 <div id="scan-hint">
-  <div class="scan-frame">
-    <div class="scan-line"></div>
-  </div>
-  <p class="scan-label">Point at the product to open your gift ✦</p>
+  <div class="scan-pulse"></div>
+  <p class="scan-label">Point camera at the product ✦</p>
 </div>
 
 <!-- A-Frame AR Scene (built dynamically) -->
 <div id="aframe-container"></div>
 
-<!-- AR Overlay UI (header + CTA) -->
-<div id="ar-overlay">
-  <div id="ar-header">
-    <div class="ar-brand">
-      <span class="ar-brand-star">✦</span>
-      <span class="ar-brand-name">ARgift</span>
-    </div>
+<!-- Fullscreen Media Overlay (shown when marker detected) -->
+<div id="media-overlay">
+  <video id="overlay-video" playsinline webkit-playsinline muted loop></video>
+  <img id="overlay-photo" alt="AR content" />
+  <div id="overlay-text">
+    <p id="overlay-text-msg"></p>
   </div>
-
-  <div id="cta-container">
-    <button id="btn-cta">Open Gift</button>
+  <div id="overlay-controls">
+    <button id="btn-cta" style="display:none">Open Gift</button>
     <div class="ar-secondary-btns">
       <button class="ar-sec-btn" id="btn-replay">↺ Replay</button>
       <button class="ar-sec-btn" id="btn-share">⇧ Share</button>
+      <button class="ar-sec-btn" id="btn-close">✕ Scan again</button>
     </div>
   </div>
 </div>
@@ -469,10 +499,9 @@ function setupAREvents(scene, exp) {
   scene.addEventListener('arReady', () => {
     $('loading-screen').classList.add('hidden')
     $('scan-hint').style.display = 'flex'
-    $('ar-overlay').classList.add('active')
   })
 
-  scene.addEventListener('arError', (e) => {
+  scene.addEventListener('arError', () => {
     showError('AR initialisation failed. Please ensure camera access is granted and try in Chrome on Android or Safari on iOS.')
   })
 
@@ -481,65 +510,66 @@ function setupAREvents(scene, exp) {
     target.addEventListener('targetFound', () => {
       targetFound = true
       $('scan-hint').style.display = 'none'
-
-      // Play video if applicable
-      if (exp.experience_type === 'video') {
-        const vid = document.getElementById('ar-video')
-        if (vid) vid.play().catch(() => {})
-      }
-
-      // Show CTA after a short delay to let experience play
-      setTimeout(() => showCTA(exp), 2500)
+      showMediaOverlay(exp)
     })
 
     target.addEventListener('targetLost', () => {
       targetFound = false
-      $('scan-hint').style.display = 'flex'
-      ctaShown = false
-      $('cta-container').classList.remove('visible')
-      if (exp.experience_type === 'video') {
-        const vid = document.getElementById('ar-video')
-        if (vid) vid.pause()
-      }
+      // keep overlay open — don't close just because marker moved out of frame
     })
   }
 }
 
-function showCTA(exp) {
-  if (ctaShown) return
-  ctaShown = true
+function showMediaOverlay(exp) {
+  const overlay = $('media-overlay')
+  const vid     = $('overlay-video')
+  const img     = $('overlay-photo')
+  const txtWrap = $('overlay-text')
+  const txtMsg  = $('overlay-text-msg')
+  const btnCta  = $('btn-cta')
 
-  const btn = $('btn-cta')
-  btn.textContent = exp.cta_label || 'Open Gift ✦'
-  btn.onclick = () => {
-    if (exp.cta_url) window.open(exp.cta_url, '_blank', 'noopener')
+  // Reset
+  vid.style.display = 'none'
+  img.style.display = 'none'
+  txtWrap.style.display = 'none'
+
+  if (exp.experience_type === 'video' && exp.media_url) {
+    vid.src = exp.media_url
+    vid.style.display = 'block'
+    vid.muted = false
+    vid.play().catch(() => { vid.muted = true; vid.play().catch(() => {}) })
+  } else if (exp.experience_type === 'photo') {
+    const url = exp.media_urls?.[0] || exp.media_url
+    if (url) { img.src = url; img.style.display = 'block' }
+  } else if (exp.experience_type === 'text') {
+    txtMsg.textContent = exp.text_message || 'A gift for you ✦'
+    txtWrap.style.display = 'flex'
   }
 
+  // CTA button
+  if (exp.cta_label && exp.cta_url) {
+    btnCta.textContent = exp.cta_label
+    btnCta.style.display = 'inline-flex'
+    btnCta.onclick = () => window.open(exp.cta_url, '_blank', 'noopener')
+  }
+
+  // Controls
   $('btn-replay').onclick = () => {
-    ctaShown = false
-    $('cta-container').classList.remove('visible')
-    if (exp.experience_type === 'video') {
-      const vid = document.getElementById('ar-video')
-      if (vid) { vid.currentTime = 0; vid.play().catch(() => {}) }
-    }
-    setTimeout(() => showCTA(exp), 2500)
+    if (exp.experience_type === 'video') { vid.currentTime = 0; vid.play().catch(() => {}) }
   }
-
   $('btn-share').onclick = async () => {
-    const shareData = {
-      title: 'ARgift — Open your gift!',
-      text: 'Someone sent you an AR gift experience!',
-      url: location.href,
-    }
-    if (navigator.share) {
-      try { await navigator.share(shareData) } catch {}
-    } else {
-      await navigator.clipboard.writeText(location.href)
-      alert('Link copied to clipboard!')
-    }
+    const data = { title: 'ARgift — Open your gift!', text: 'Someone sent you an AR gift!', url: location.href }
+    if (navigator.share) { try { await navigator.share(data) } catch {} }
+    else { await navigator.clipboard.writeText(location.href); alert('Link copied!') }
+  }
+  $('btn-close').onclick = () => {
+    overlay.classList.remove('active')
+    vid.pause()
+    $('scan-hint').style.display = 'flex'
+    ctaShown = false
   }
 
-  $('cta-container').classList.add('visible')
+  overlay.classList.add('active')
 }
 
 // ─── 5. Main flow ─────────────────────────────────────────────────────────────
