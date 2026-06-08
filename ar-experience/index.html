@@ -245,24 +245,17 @@
     }
     .error-retry:hover { background: rgba(255,255,255,0.2); }
 
-    /* A-Frame canvas */
-    a-scene { position: fixed !important; inset: 0 !important; }
+    /* Our own camera feed video */
+    #camera-feed {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      z-index: 1;
+    }
 
-    /* MindAR camera feed — must be visible behind the canvas */
-    #mindar-arjs-video {
-      position: fixed !important;
-      top: 0 !important; left: 0 !important;
-      width: 100% !important; height: 100% !important;
-      object-fit: cover !important;
-      z-index: 0 !important;
-      display: block !important;
-    }
-    a-scene canvas {
-      position: fixed !important;
-      inset: 0 !important;
-      z-index: 1 !important;
-      background: transparent !important;
-    }
+    /* Hide the A-Frame/MindAR canvas — we only use it for tracking */
+    #aframe-container { display: none !important; }
+    a-scene { display: none !important; }
   </style>
 </head>
 <body>
@@ -292,6 +285,9 @@
   <p id="error-message">Unable to load your gift experience.</p>
   <button class="error-retry" onclick="location.reload()">Try again</button>
 </div>
+
+<!-- Our camera feed (always visible behind UI) -->
+<video id="camera-feed" autoplay playsinline webkit-playsinline muted></video>
 
 <!-- Scan Hint (shown when AR is active but no target found yet) -->
 <div id="scan-hint">
@@ -599,11 +595,26 @@ async function main() {
 async function launchAR() {
   setLoadingStatus('Starting camera…', 75)
 
+  // Start our own camera stream and show it immediately
+  let stream
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    })
+  } catch (err) {
+    showError('Camera access denied. Please allow camera and reload.')
+    return
+  }
+
+  const camFeed = $('camera-feed')
+  camFeed.srcObject = stream
+  await camFeed.play().catch(() => {})
+
   setLoadingStatus('Building AR scene…', 90)
   sceneEl = buildScene(experience)
   setupAREvents(sceneEl, experience)
 
-  // Start AR after scene is ready
+  // Start AR tracking after scene is ready
   sceneEl.addEventListener('loaded', () => {
     setLoadingStatus('Ready! Point at your product…', 100)
     const system = sceneEl.systems['mindar-image-system']
