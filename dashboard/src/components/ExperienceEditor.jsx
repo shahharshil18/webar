@@ -16,6 +16,7 @@ export default function ExperienceEditor({ experience, userId, onSaved, onCancel
     media_url: experience.media_url || '',
     media_urls: experience.media_urls || [],
     marker_url: experience.marker_url || '',
+    marker_image_url: experience.marker_image_url || '',
     marker_aspect_ratio: experience.marker_aspect_ratio || 1,
   })
   const [uploading, setUploading] = useState(false)
@@ -63,6 +64,7 @@ export default function ExperienceEditor({ experience, userId, onSaved, onCancel
         media_url: form.media_url,
         media_urls: form.media_urls,
         marker_url: form.marker_url,
+        marker_image_url: form.marker_image_url,
         marker_aspect_ratio: form.marker_aspect_ratio,
       }
       const saved = await saveExperience(userId, experience.product_id, payload)
@@ -570,9 +572,17 @@ function MarkerTab({ form, set, userId, productId }) {
       const buffer = await compiler.exportData()
 
       setStatus('uploading')
-      const url = await uploadMarkerMind(userId, productId, buffer)
-      set('marker_url', url)
-      // Save aspect ratio so AR plane matches marker exactly
+
+      // Upload the compiled .mind file
+      const mindUrl = await uploadMarkerMind(userId, productId, buffer)
+
+      // Also upload the original image — AR viewer uses this as a reliable
+      // fallback to measure the exact aspect ratio (width/height in pixels)
+      const imageUrl = await uploadFile('images', `${userId}/${productId}/marker-source${file.name.match(/\.[^.]+$/)?.[0] || '.jpg'}`, file)
+
+      set('marker_url', mindUrl)
+      set('marker_image_url', imageUrl)
+      // Pixel-exact ratio: height / width  (e.g. A4 portrait ≈ 1.414)
       set('marker_aspect_ratio', img.naturalHeight / img.naturalWidth)
       setStatus('done')
     } catch (err) {

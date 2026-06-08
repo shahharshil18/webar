@@ -442,6 +442,54 @@ function buildARScene(exp) {
   return scene
 }
 
+// ─── Determine exact marker aspect ratio — three sources, best-first ─────────
+// Source 1: MindAR controller.allDimensions (no extra request)
+// Source 2: Load the original marker image URL and read naturalHeight/Width
+// Source 3: DB-saved marker_aspect_ratio (last resort)
+async function applyMarkerAspectRatio(scene, exp) {
+  // ── Source 1: MindAR internal data ────────────────────────────────────────
+  try {
+    const ctrl = scene.systems['mindar-image-system'].controller
+
+    // allDimensions[i] = [width, height] — set by controller.setup()
+    if (Array.isArray(ctrl.allDimensions?.[0])) {
+      const [w, h] = ctrl.allDimensions[0]
+      if (w > 0 && h > 0) { resizeARContent(scene, h / w); return }
+    }
+    // Alternative paths across MindAR builds
+    const t = ctrl.imageTargets?.[0] || ctrl.targets?.[0]
+    if (t) {
+      if (Array.isArray(t.dimensions) && t.dimensions[0] > 0) {
+        resizeARContent(scene, t.dimensions[1] / t.dimensions[0]); return
+      }
+      const h = t.imageHeight ?? t.height
+      const w = t.imageWidth  ?? t.width
+      if (h > 0 && w > 0) { resizeARContent(scene, h / w); return }
+    }
+  } catch (_) {}
+
+  // ── Source 2: Load the original marker image and read pixel dimensions ────
+  // marker_image_url is the JPG/PNG the user uploaded before compilation.
+  // Loading it gives us exact naturalWidth/naturalHeight with zero ambiguity.
+  if (exp.marker_image_url) {
+    try {
+      const ratio = await new Promise((resolve, reject) => {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload  = () => resolve(img.naturalHeight / img.naturalWidth)
+        img.onerror = reject
+        img.src = exp.marker_image_url
+      })
+      if (ratio > 0) { resizeARContent(scene, ratio); return }
+    } catch (_) {}
+  }
+
+  // ── Source 3: DB-saved ratio (fallback, may be stale default of 1) ────────
+  const saved = parseFloat(exp.marker_aspect_ratio)
+  if (saved > 0 && saved !== 1) resizeARContent(scene, saved)
+  // If saved === 1 we leave the plane as-is (1×1) rather than squashing it
+}
+
 // ─── Resize content to exact aspect ratio once MindAR reports real dimensions ─
 function resizeARContent(scene, realAR) {
   const W = 1, H = realAR
@@ -466,29 +514,7 @@ function setupAREvents(scene, exp) {
   scene.addEventListener('arReady', () => {
     $('loading-screen').classList.add('hidden')
     $('scan-hint').style.display = 'flex'
-
-    // Read the real aspect ratio straight from the already-parsed .mind data.
-    // MindAR loads this during init — no extra network request needed.
-    try {
-      const ctrl = scene.systems['mindar-image-system'].controller
-      // MindAR 1.x stores parsed targets in controller.imageTargets[]
-      const t = ctrl.imageTargets?.[0]
-      if (t) {
-        const h = t.imageHeight ?? t.height
-        const w = t.imageWidth  ?? t.width
-        if (h > 0 && w > 0) {
-          resizeARContent(scene, h / w)
-          return
-        }
-      }
-      // Fallback: some builds expose it on controller.targets[]
-      const t2 = ctrl.targets?.[0]
-      if (t2) {
-        const h = t2.imageHeight ?? t2.height
-        const w = t2.imageWidth  ?? t2.width
-        if (h > 0 && w > 0) resizeARContent(scene, h / w)
-      }
-    } catch (e) { /* keep stored ratio */ }
+    applyMarkerAspectRatio(scene, exp)
   })
 
   scene.addEventListener('arError', () => {

@@ -16,6 +16,7 @@ create table if not exists public.experiences (
   media_url     text,
   media_urls    text[] default '{}',
   marker_url          text,
+  marker_image_url    text,
   marker_aspect_ratio float default 1,
   cta_label     text,
   cta_url       text,
