@@ -168,44 +168,20 @@
       0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; }
     }
 
-    /* ---- Fullscreen Media Overlay ---- */
-    #media-overlay {
-      position: fixed; inset: 0; z-index: 60;
-      background: #000;
-      display: none; flex-direction: column;
-      align-items: center; justify-content: center;
-      animation: fade-in 0.4s ease;
-    }
-    #media-overlay.active { display: flex; }
-    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-
-    #overlay-video {
-      width: 100%; height: 100%;
-      object-fit: cover;
-    }
-    #overlay-photo {
-      width: 100%; height: 100%;
-      object-fit: contain;
-      display: none;
-    }
-    #overlay-text {
-      display: none;
-      flex-direction: column; align-items: center; justify-content: center;
-      padding: 40px; text-align: center;
-    }
-    #overlay-text-msg {
-      font-family: var(--font-display);
-      font-size: clamp(22px, 6vw, 44px);
-      color: var(--gold-light);
-      line-height: 1.4;
-      text-shadow: 0 0 40px rgba(240,192,96,0.5);
-    }
-    /* close / CTA row on overlay */
-    #overlay-controls {
-      position: absolute; bottom: 0; left: 0; right: 0;
-      padding: 24px 24px 40px;
+    /* ---- CTA Bar (shown when marker found) ---- */
+    #cta-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      z-index: 60;
+      padding: 16px 24px 36px;
       display: flex; flex-direction: column; align-items: center; gap: 12px;
-      background: linear-gradient(transparent, rgba(0,0,0,0.7));
+      background: linear-gradient(transparent, rgba(0,0,0,0.65));
+      pointer-events: all;
+      opacity: 0; transform: translateY(20px);
+      transition: opacity 0.4s ease, transform 0.4s ease;
+      pointer-events: none;
+    }
+    #cta-bar.visible {
+      opacity: 1; transform: translateY(0);
       pointer-events: all;
     }
 
@@ -294,7 +270,7 @@
     }
     .error-retry:hover { background: rgba(255,255,255,0.2); }
 
-    /* Our own camera feed video */
+    /* Camera feed — sits at the very back */
     #camera-feed {
       position: fixed; inset: 0;
       width: 100%; height: 100%;
@@ -302,9 +278,10 @@
       z-index: 1;
     }
 
-    /* Hide the A-Frame/MindAR canvas — we only use it for tracking */
-    #aframe-container { display: none !important; }
-    a-scene { display: none !important; }
+    /* A-Frame sits on top of camera feed, canvas must be transparent */
+    #aframe-container { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+    a-scene { position: fixed !important; inset: 0 !important; background: transparent !important; }
+    a-scene canvas { background: transparent !important; }
   </style>
 </head>
 <body>
@@ -357,20 +334,12 @@
 <!-- A-Frame AR Scene (built dynamically) -->
 <div id="aframe-container"></div>
 
-<!-- Fullscreen Media Overlay (shown when marker detected) -->
-<div id="media-overlay">
-  <video id="overlay-video" playsinline webkit-playsinline muted loop></video>
-  <img id="overlay-photo" alt="AR content" />
-  <div id="overlay-text">
-    <p id="overlay-text-msg"></p>
-  </div>
-  <div id="overlay-controls">
-    <button id="btn-cta" style="display:none">Open Gift</button>
-    <div class="ar-secondary-btns">
-      <button class="ar-sec-btn" id="btn-replay">↺ Replay</button>
-      <button class="ar-sec-btn" id="btn-share">⇧ Share</button>
-      <button class="ar-sec-btn" id="btn-close">✕ Scan again</button>
-    </div>
+<!-- CTA Bar (shown when marker detected) -->
+<div id="cta-bar">
+  <button id="btn-cta" style="display:none">Open Gift</button>
+  <div class="ar-secondary-btns">
+    <button class="ar-sec-btn" id="btn-replay">↺ Replay</button>
+    <button class="ar-sec-btn" id="btn-share">⇧ Share</button>
   </div>
 </div>
 
@@ -427,8 +396,7 @@ function buildScene(exp) {
   const scene = document.createElement('a-scene')
   scene.setAttribute('mindar-image', `imageTargetSrc: ${markerUrl}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.001; filterBeta: 0.01; warmupTolerance: 5; missTolerance: 5`)
   scene.setAttribute('color-space', 'sRGB')
-  scene.setAttribute('renderer', 'colorManagement: true; physicallyCorrectLights: true; alpha: true')
-  scene.setAttribute('background', 'color: transparent; transparent: true')
+  scene.setAttribute('renderer', 'colorManagement: true; alpha: true; logarithmicDepthBuffer: true')
   scene.setAttribute('vr-mode-ui', 'enabled: false')
   scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
 
@@ -467,74 +435,50 @@ function buildScene(exp) {
     forest:   { color: '#c8f5c8', font: 'https://cdn.aframe.io/fonts/DejaVu-sdf.fnt', bg: '#1a3a1a' },
   }[template] || { color: '#f0c060', font: 'https://cdn.aframe.io/fonts/DejaVu-sdf.fnt', bg: '#000' }
 
+  // MindAR default marker aspect is 1 unit wide. We match content to that.
+  // All content sits at z=0.01 so it lies just above the physical marker surface.
+
   if (exp.experience_type === 'video' && exp.media_url) {
-    // Video plane floating above marker
     const videoEl = document.createElement('a-video')
     videoEl.setAttribute('src', '#ar-video')
-    videoEl.setAttribute('position', '0 0.3 0')
-    videoEl.setAttribute('width', '1.6')
-    videoEl.setAttribute('height', '0.9')
-    videoEl.setAttribute('rotation', '0 0 0')
-    videoEl.setAttribute('animation', 'property: position; from: 0 0.2 0; to: 0 0.35 0; dur: 3000; loop: true; dir: alternate; easing: easeInOutSine')
+    videoEl.setAttribute('position', '0 0 0.01')
+    videoEl.setAttribute('width', '1')          // fill marker width
+    videoEl.setAttribute('height', '0.5625')    // 16:9 within marker
+    videoEl.setAttribute('material', 'transparent: false')
     mindarImage.appendChild(videoEl)
-
-    // Play when target found
-    scene.addEventListener('arReady', () => {})
   }
 
   if (exp.experience_type === 'photo' && (exp.media_url || (exp.media_urls && exp.media_urls.length))) {
     const imgs = exp.media_urls?.length ? exp.media_urls : [exp.media_url]
-    imgs.slice(0, 5).forEach((url, i) => {
-      const plane = document.createElement('a-plane')
-      plane.setAttribute('src', url)
-      plane.setAttribute('width', '1.6')
-      plane.setAttribute('height', '1.0')
-      plane.setAttribute('position', `${i * 0.05} ${0.3 + i * 0.005} ${-i * 0.01}`)
-      plane.setAttribute('rotation', `0 ${i * 2} 0`)
-      plane.setAttribute('visible', i === 0 ? 'true' : 'false')
-      plane.id = `photo-${i}`
-      plane.setAttribute('animation__float', 'property: position; from: 0 0.25 0; to: 0 0.38 0; dur: 3500; loop: true; dir: alternate; easing: easeInOutSine')
-      mindarImage.appendChild(plane)
-    })
+    // Show only first photo flat on marker
+    const plane = document.createElement('a-plane')
+    plane.setAttribute('src', imgs[0])
+    plane.setAttribute('width', '1')
+    plane.setAttribute('height', '1')
+    plane.setAttribute('position', '0 0 0.01')
+    plane.setAttribute('material', 'transparent: false')
+    mindarImage.appendChild(plane)
   }
 
   if (exp.experience_type === 'text') {
     const textMsg = exp.text_message || 'A gift for you ✦'
-
-    // Background glow panel
     const bgPanel = document.createElement('a-plane')
-    bgPanel.setAttribute('width', '1.8')
-    bgPanel.setAttribute('height', '0.8')
-    bgPanel.setAttribute('position', '0 0.35 -0.01')
+    bgPanel.setAttribute('width', '1')
+    bgPanel.setAttribute('height', '1')
+    bgPanel.setAttribute('position', '0 0 0')
     bgPanel.setAttribute('color', templateConfig.bg)
-    bgPanel.setAttribute('opacity', '0.7')
-    bgPanel.setAttribute('material', 'transparent: true')
+    bgPanel.setAttribute('material', `color: ${templateConfig.bg}; opacity: 0.85; transparent: true`)
     mindarImage.appendChild(bgPanel)
 
-    // Text
     const textEl = document.createElement('a-text')
     textEl.setAttribute('value', textMsg)
     textEl.setAttribute('color', templateConfig.color)
     textEl.setAttribute('align', 'center')
-    textEl.setAttribute('width', '1.6')
-    textEl.setAttribute('position', '0 0.35 0')
-    textEl.setAttribute('wrap-count', '28')
+    textEl.setAttribute('width', '0.9')
+    textEl.setAttribute('position', '0 0 0.02')
+    textEl.setAttribute('wrap-count', '22')
     textEl.setAttribute('font', templateConfig.font)
-    textEl.setAttribute('animation__float', 'property: position; from: 0 0.3 0; to: 0 0.42 0; dur: 3000; loop: true; dir: alternate; easing: easeInOutSine')
-    textEl.setAttribute('animation__glow', 'property: material.opacity; from: 0.85; to: 1; dur: 1500; loop: true; dir: alternate; easing: easeInOutSine')
     mindarImage.appendChild(textEl)
-
-    // Particle sparkles
-    for (let i = 0; i < 6; i++) {
-      const spark = document.createElement('a-entity')
-      const x = (Math.random() - 0.5) * 2
-      const y = Math.random() * 0.8
-      spark.setAttribute('position', `${x} ${y} 0.05`)
-      spark.setAttribute('geometry', 'primitive: sphere; radius: 0.015')
-      spark.setAttribute('material', `color: ${templateConfig.color}; emissive: ${templateConfig.color}; emissiveIntensity: 2`)
-      spark.setAttribute('animation', `property: position; from: ${x} ${y} 0.05; to: ${x} ${y + 0.2} 0.05; dur: ${1500 + i * 300}; loop: true; dir: alternate; easing: easeInOutSine`)
-      mindarImage.appendChild(spark)
-    }
   }
 
   // Ambient light
@@ -564,77 +508,66 @@ function setupAREvents(scene, exp) {
   if (target) {
     target.addEventListener('targetFound', () => {
       targetFound = true
-      // Flash gold to signal detection
+      // Gold flash
       const flash = $('found-flash')
       flash.classList.remove('flash')
-      void flash.offsetWidth // reflow
+      void flash.offsetWidth
       flash.classList.add('flash')
-      // Update label briefly then hide scan overlay
       $('scan-label-text').textContent = '✦ Product found!'
-      setTimeout(() => {
-        $('scan-hint').style.display = 'none'
-        showMediaOverlay(exp)
-      }, 400)
+      setTimeout(() => { $('scan-hint').style.display = 'none' }, 400)
+
+      // Play video on the marker
+      if (exp.experience_type === 'video') {
+        const vid = document.getElementById('ar-video')
+        if (vid) vid.play().catch(() => {})
+      }
+      // Show CTA controls
+      setTimeout(() => showCTA(exp), 1500)
     })
 
     target.addEventListener('targetLost', () => {
       targetFound = false
-      // keep overlay open — don't close just because marker moved out of frame
+      $('scan-label-text').textContent = 'Scanning for product…'
+      $('scan-hint').style.display = 'flex'
+      hideCTA()
+      if (exp.experience_type === 'video') {
+        const vid = document.getElementById('ar-video')
+        if (vid) vid.pause()
+      }
     })
   }
 }
 
-function showMediaOverlay(exp) {
-  const overlay = $('media-overlay')
-  const vid     = $('overlay-video')
-  const img     = $('overlay-photo')
-  const txtWrap = $('overlay-text')
-  const txtMsg  = $('overlay-text-msg')
-  const btnCta  = $('btn-cta')
+function showCTA(exp) {
+  if (ctaShown) return
+  ctaShown = true
+  const bar = $('cta-bar')
+  const btnCta = $('btn-cta')
 
-  // Reset
-  vid.style.display = 'none'
-  img.style.display = 'none'
-  txtWrap.style.display = 'none'
-
-  if (exp.experience_type === 'video' && exp.media_url) {
-    vid.src = exp.media_url
-    vid.style.display = 'block'
-    vid.muted = false
-    vid.play().catch(() => { vid.muted = true; vid.play().catch(() => {}) })
-  } else if (exp.experience_type === 'photo') {
-    const url = exp.media_urls?.[0] || exp.media_url
-    if (url) { img.src = url; img.style.display = 'block' }
-  } else if (exp.experience_type === 'text') {
-    txtMsg.textContent = exp.text_message || 'A gift for you ✦'
-    txtWrap.style.display = 'flex'
-  }
-
-  // CTA button
   if (exp.cta_label && exp.cta_url) {
     btnCta.textContent = exp.cta_label
     btnCta.style.display = 'inline-flex'
     btnCta.onclick = () => window.open(exp.cta_url, '_blank', 'noopener')
   }
 
-  // Controls
   $('btn-replay').onclick = () => {
-    if (exp.experience_type === 'video') { vid.currentTime = 0; vid.play().catch(() => {}) }
+    if (exp.experience_type === 'video') {
+      const vid = document.getElementById('ar-video')
+      if (vid) { vid.currentTime = 0; vid.play().catch(() => {}) }
+    }
   }
   $('btn-share').onclick = async () => {
-    const data = { title: 'ARgift — Open your gift!', text: 'Someone sent you an AR gift!', url: location.href }
+    const data = { title: 'ARgift', text: 'Someone sent you an AR gift!', url: location.href }
     if (navigator.share) { try { await navigator.share(data) } catch {} }
     else { await navigator.clipboard.writeText(location.href); alert('Link copied!') }
   }
-  $('btn-close').onclick = () => {
-    overlay.classList.remove('active')
-    vid.pause()
-    $('scan-label-text').textContent = 'Scanning for product…'
-    $('scan-hint').style.display = 'flex'
-    ctaShown = false
-  }
 
-  overlay.classList.add('active')
+  bar.classList.add('visible')
+}
+
+function hideCTA() {
+  ctaShown = false
+  $('cta-bar').classList.remove('visible')
 }
 
 // ─── 5. Main flow ─────────────────────────────────────────────────────────────
