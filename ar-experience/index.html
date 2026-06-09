@@ -52,6 +52,11 @@
     #loading-status { font-size: 14px; color: rgba(255,255,255,0.45); text-align: center; padding: 0 32px; line-height: 1.6; min-height: 44px; }
     .loading-bar-wrap { width: 200px; height: 2px; background: rgba(255,255,255,0.1); border-radius: 1px; overflow: hidden; }
     .loading-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--gold), var(--gold-light)); border-radius: 1px; transition: width 0.3s ease; }
+    .loading-bar.indeterminate { width: 40% !important; animation: bar-slide 1.4s ease-in-out infinite; }
+    @keyframes bar-slide {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
+    }
 
     /* ── Permission ── */
     #permission-screen {
@@ -322,8 +327,7 @@ async function buildMasterMind(experiences) {
     }
   }
 
-  // Cache miss — load images + compile
-  setStatus(`Loading ${valid.length} marker images…`, 25)
+  // Cache miss — load images + compile (silently, no progress shown to user)
   const images = await Promise.all(valid.map(e => new Promise((res, rej) => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
@@ -332,13 +336,10 @@ async function buildMasterMind(experiences) {
     img.src = e.marker_image_url
   })))
 
-  setStatus('Compiling markers… 0%', 40)
-  // mindar-image.prod.js is the compiler-only build (no A-Frame dependency)
   const { Compiler } = await import(/* @vite-ignore */
     'https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js')
   const compiler = new Compiler()
-  await compiler.compileImageTargets(images, p =>
-    setStatus(`Compiling markers… ${Math.round(p * 100)}%`, 40 + p * 45))
+  await compiler.compileImageTargets(images, () => {}) // progress suppressed
 
   const buffer   = await compiler.exportData()
   const indexMap = valid.map((e, i) => ({ targetIndex: i, productId: e.product_id, exp: e }))
@@ -599,55 +600,43 @@ window.addEventListener('beforeunload', cleanup)
 async function launchAR(mindUrl, indexMap) {
   markCameraGranted()
   $('loading-screen').classList.remove('hidden')
-  setStatus('Starting AR…', 92)
+  // Keep the indeterminate bar going — loading screen hides when arReady fires
 
   sceneEl = buildScene(mindUrl, indexMap.length)
   setupAREvents(sceneEl, indexMap)
 
   sceneEl.addEventListener('loaded', () => {
-    setStatus('Point at your product ✦', 100)
     sceneEl.systems?.['mindar-image-system']?.start()
   })
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  setStatus('Loading…', 5)
-
   // Guard: build.js replaces these placeholders at deploy time.
-  // Catch: placeholder not replaced, empty string, or non-URL value.
   if (!SUPABASE_URL || SUPABASE_URL.includes('__') || !SUPABASE_URL.startsWith('https://')) {
-    showError(
-      'Config error: VITE_SUPABASE_URL is missing or invalid. ' +
-      'Set it in Vercel → Settings → Environment Variables, then redeploy. ' +
-      'Current value: "' + SUPABASE_URL + '"'
-    )
+    showError('Config error: VITE_SUPABASE_URL is missing. Set it in Vercel → Settings → Environment Variables, then redeploy. Current value: "' + SUPABASE_URL + '"')
     return
   }
+
+  // Indeterminate bar — no numbers, no "compiling" text visible to user
+  $('loading-bar').classList.add('indeterminate')
+  $('loading-status').textContent = 'Opening AR experience…'
 
   const params = new URLSearchParams(location.search)
   const pid    = params.get('pid') || params.get('id')
 
-  // ── Kick off asset loading IMMEDIATELY (before permission prompt) ──────────
-  // By the time the user taps "Allow Camera", assets will already be in memory.
+  // ── Start loading assets immediately — parallel with permission screen ──────
   let assetsPromise
 
   if (pid) {
-    // ── Single-experience mode ───────────────────────────────────────────────
-    setStatus('Fetching experience…', 15)
     let exp
     try { exp = await fetchExperience(pid) }
     catch (e) { showError(e.message); return }
 
-    setStatus('Loading marker…', 35)
-    // Start fetching .mind file right now — runs in parallel with permission UI
     assetsPromise = loadMindBlob(exp.marker_url)
       .then(mindUrl => ({ mindUrl, indexMap: [{ targetIndex: 0, productId: exp.product_id, exp }] }))
-      .catch(e => { throw e })
 
   } else {
-    // ── Root / universal mode ────────────────────────────────────────────────
-    setStatus('Loading experiences…', 15)
     let exps
     try { exps = await fetchAllExperiences() }
     catch (e) { showError(e.message); return }
@@ -660,8 +649,7 @@ async function main() {
       return
     }
 
-    setStatus(`Preparing ${validCount} markers…`, 20)
-    // Compile/cache master .mind in background while user reads permission UI
+    // Compile silently — no status updates exposed to user
     assetsPromise = buildMasterMind(exps)
   }
 
@@ -669,23 +657,19 @@ async function main() {
   const alreadyGranted = await cameraAlreadyGranted()
 
   if (alreadyGranted) {
-    // Skip permission screen — wait for assets then go straight to AR
-    setStatus('Loading AR…', 75)
     let assets
     try { assets = await assetsPromise }
     catch (e) { showError(e.message || 'Failed to prepare AR assets.'); return }
     await launchAR(assets.mindUrl, assets.indexMap)
 
   } else {
-    // Show permission screen NOW — assets continue loading in background
     $('loading-screen').classList.add('hidden')
     $('permission-screen').style.display = 'flex'
 
     $('btn-allow-camera').addEventListener('click', async () => {
       $('permission-screen').style.display = 'none'
       $('loading-screen').classList.remove('hidden')
-      setStatus('Loading AR assets…', 75)
-      // Assets have been loading the whole time the user looked at this screen
+      // Assets have been loading the whole time the permission screen was visible
       let assets
       try { assets = await assetsPromise }
       catch (e) { showError(e.message || 'Failed to prepare AR assets.'); return }
