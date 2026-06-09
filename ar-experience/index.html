@@ -614,12 +614,13 @@ async function launchAR(mindUrl, indexMap) {
 async function main() {
   setStatus('Loading…', 5)
 
-  // Guard: build.js replaces these placeholders with real values at deploy time.
-  // If they're still placeholders, the Vercel env vars aren't set.
-  if (SUPABASE_URL.includes('__') || SUPABASE_KEY.includes('__')) {
+  // Guard: build.js replaces these placeholders at deploy time.
+  // Catch: placeholder not replaced, empty string, or non-URL value.
+  if (!SUPABASE_URL || SUPABASE_URL.includes('__') || !SUPABASE_URL.startsWith('https://')) {
     showError(
-      'Configuration error: Supabase credentials are missing. ' +
-      'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your Vercel project environment variables, then redeploy.'
+      'Config error: VITE_SUPABASE_URL is missing or invalid. ' +
+      'Set it in Vercel → Settings → Environment Variables, then redeploy. ' +
+      'Current value: "' + SUPABASE_URL + '"'
     )
     return
   }
