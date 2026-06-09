@@ -9,12 +9,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>ARgift — Open your gift ✦</title>
 
-  <!-- Preload CDN scripts so browser starts fetching them immediately,
-       before any JS runs. SW will serve from cache on repeat visits. -->
+  <!-- Preload CDN scripts — no crossorigin attr so credential mode matches the script tags below -->
   <link rel="preload" as="script"
-    href="https://cdn.jsdelivr.net/npm/aframe@1.4.2/dist/aframe.min.js" crossorigin />
+    href="https://cdn.jsdelivr.net/npm/aframe@1.4.2/dist/aframe.min.js" />
   <link rel="preload" as="script"
-    href="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js" crossorigin />
+    href="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js" />
 
   <!-- A-Frame first (required), then MindAR -->
   <script src="https://cdn.jsdelivr.net/npm/aframe@1.4.2/dist/aframe.min.js"></script>
@@ -614,6 +613,16 @@ async function launchAR(mindUrl, indexMap) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
   setStatus('Loading…', 5)
+
+  // Guard: build.js replaces these placeholders with real values at deploy time.
+  // If they're still placeholders, the Vercel env vars aren't set.
+  if (SUPABASE_URL.includes('__') || SUPABASE_KEY.includes('__')) {
+    showError(
+      'Configuration error: Supabase credentials are missing. ' +
+      'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your Vercel project environment variables, then redeploy.'
+    )
+    return
+  }
 
   const params = new URLSearchParams(location.search)
   const pid    = params.get('pid') || params.get('id')
