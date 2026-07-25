@@ -360,7 +360,7 @@ async function buildMasterMind(experiences) {
 function buildScene(mindUrl, numTargets) {
   const scene = document.createElement('a-scene')
   scene.setAttribute('mindar-image',
-    `imageTargetSrc: ${mindUrl}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no; warmupTolerance: 5; missTolerance: 5; maxTrack: 1`)
+    `imageTargetSrc: ${mindUrl}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no; warmupTolerance: 5; missTolerance: 5; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 0.001`)
   scene.setAttribute('renderer', 'colorManagement: true')
   scene.setAttribute('vr-mode-ui', 'enabled: false')
   scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
