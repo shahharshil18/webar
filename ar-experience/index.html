@@ -407,24 +407,37 @@ function buildTargetContent(targetEl, exp, scene) {
   targetEl._border = border
 
   if (exp.experience_type === 'video' && exp.media_url) {
-    const assets = scene.querySelector('a-assets')
-    const vid    = document.createElement('video')
-    const vidId  = `arv-${exp.id}`
-    vid.id = vidId; vid.loop = true; vid.muted = true
-    vid.playsInline = true
+    // Create video element outside <a-assets> — a-assets is only processed
+    // during scene init, so post-init additions are invisible to A-Frame's
+    // texture loader and render black.
+    const vid = document.createElement('video')
+    vid.crossOrigin = 'anonymous'
+    vid.loop = true; vid.muted = true; vid.playsInline = true
     vid.setAttribute('playsinline', ''); vid.setAttribute('webkit-playsinline', '')
-    vid.setAttribute('crossorigin', 'anonymous')
-    vid.preload = 'none'   // lazy — don't load until marker is detected
     vid.src = exp.media_url
-    assets.appendChild(vid)
+    vid.load() // start buffering immediately so first frame is ready when marker found
     targetEl._video = vid
 
-    const el = document.createElement('a-video')
+    // Use a-plane so we can set the texture manually via Three.js VideoTexture.
+    // a-video with src="#id" requires a-assets registration which we can't do post-init.
+    const el = document.createElement('a-plane')
     el.setAttribute('data-ar-content', '')
-    el.setAttribute('src', `#${vidId}`)
     el.setAttribute('width', W.toString()); el.setAttribute('height', H.toString())
     el.setAttribute('position', '0 0 0.001'); el.setAttribute('rotation', '0 0 0')
     targetEl.appendChild(el)
+
+    // Once the entity's mesh exists, wire the VideoTexture directly to Three.js material
+    el.addEventListener('loaded', () => {
+      const { THREE } = AFRAME
+      const tex = new THREE.VideoTexture(vid)
+      tex.minFilter = THREE.LinearFilter
+      tex.magFilter = THREE.LinearFilter
+      const mesh = el.getObject3D('mesh')
+      if (mesh) {
+        mesh.material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
+        mesh.material.needsUpdate = true
+      }
+    })
   }
 
   if (exp.experience_type === 'photo') {
@@ -542,10 +555,10 @@ function setupAREvents(scene, indexMap) {
       $('scan-label-text').textContent = '✦ Product found!'
       setTimeout(() => { $('scan-hint').style.display = 'none' }, 400)
 
-      // Play video (muted first → unmute after brief delay for mobile autoplay policy)
+      // Play video — muted first (mobile autoplay policy), unmute after short delay
       if (targetEl._video) {
         const vid = targetEl._video
-        vid.currentTime = 0; vid.muted = true
+        vid.muted = true
         vid.play().then(() => setTimeout(() => { vid.muted = false }, 300)).catch(() => {})
       }
 
