@@ -396,46 +396,57 @@ function buildTargetContent(targetEl, exp, scene) {
   const ar = parseFloat(exp.marker_aspect_ratio) || 1
   const W = 1, H = ar
 
-  // Gold border (behind content)
+  // Thin gold border (behind content)
   const border = document.createElement('a-plane')
   border.setAttribute('data-ar-border', '')
-  border.setAttribute('width',    (W + 0.02).toString())
-  border.setAttribute('height',   (H + 0.02).toString())
+  border.setAttribute('width',    (W + 0.004).toString())
+  border.setAttribute('height',   (H + 0.004).toString())
   border.setAttribute('position', '0 0 -0.001')
   border.setAttribute('material', 'color: #c9932a; shader: flat; side: double')
   targetEl.appendChild(border)
   targetEl._border = border
 
   if (exp.experience_type === 'video' && exp.media_url) {
-    // Create video element outside <a-assets> — a-assets is only processed
-    // during scene init, so post-init additions are invisible to A-Frame's
-    // texture loader and render black.
+    // Video element lives outside <a-assets> — a-assets only processes at scene
+    // init, so lazily-added videos render black if registered through it.
     const vid = document.createElement('video')
     vid.crossOrigin = 'anonymous'
     vid.loop = true; vid.muted = true; vid.playsInline = true
     vid.setAttribute('playsinline', ''); vid.setAttribute('webkit-playsinline', '')
+    vid.preload = 'auto'
     vid.src = exp.media_url
-    vid.load() // start buffering immediately so first frame is ready when marker found
+    vid.load() // begin buffering now so the first frame is ready when marker is found
     targetEl._video = vid
 
-    // Use a-plane so we can set the texture manually via Three.js VideoTexture.
-    // a-video with src="#id" requires a-assets registration which we can't do post-init.
     const el = document.createElement('a-plane')
     el.setAttribute('data-ar-content', '')
     el.setAttribute('width', W.toString()); el.setAttribute('height', H.toString())
     el.setAttribute('position', '0 0 0.001'); el.setAttribute('rotation', '0 0 0')
     targetEl.appendChild(el)
 
-    // Once the entity's mesh exists, wire the VideoTexture directly to Three.js material
-    el.addEventListener('loaded', () => {
+    const applyVideoTexture = mesh => {
       const { THREE } = AFRAME
       const tex = new THREE.VideoTexture(vid)
       tex.minFilter = THREE.LinearFilter
       tex.magFilter = THREE.LinearFilter
+      mesh.material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
+      mesh.material.needsUpdate = true
+      el.removeAttribute('animation') // stop pulsing
+    }
+
+    el.addEventListener('loaded', () => {
       const mesh = el.getObject3D('mesh')
-      if (mesh) {
-        mesh.material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
-        mesh.material.needsUpdate = true
+      if (!mesh) return
+
+      if (vid.readyState >= 3) {
+        // Video already has a frame — apply texture immediately
+        applyVideoTexture(mesh)
+      } else {
+        // Show dark pulsing placeholder until the video is ready
+        const { THREE } = AFRAME
+        mesh.material = new THREE.MeshBasicMaterial({ color: 0x0a0f1e, side: THREE.DoubleSide })
+        el.setAttribute('animation', 'property: material.opacity; from: 0.4; to: 1; loop: true; dir: alternate; dur: 700; easing: easeInOutSine')
+        vid.addEventListener('canplay', () => applyVideoTexture(el.getObject3D('mesh')), { once: true })
       }
     })
   }
@@ -494,7 +505,7 @@ function refineAspectRatio(scene, targetEl, exp) {
       content.setAttribute('position', '0 0 0.001')
     }
     if (border) {
-      border.setAttribute('width', W + 0.02); border.setAttribute('height', H + 0.02)
+      border.setAttribute('width', W + 0.004); border.setAttribute('height', H + 0.004)
     }
   }
 
@@ -532,6 +543,15 @@ function setupAREvents(scene, indexMap) {
   scene.addEventListener('arReady', () => {
     $('loading-screen').classList.add('hidden')
     $('scan-hint').style.display = 'flex'
+
+    // Pre-build all target content now so videos start buffering immediately.
+    // By the time the user points at a marker (several seconds later), the
+    // first frame is ready and there's no black-screen delay.
+    indexMap.forEach(({ targetIndex, exp }) => {
+      const targetEl = scene.querySelector(`[data-target-index="${targetIndex}"]`)
+        || scene.querySelector(`[mindar-image-target="targetIndex: ${targetIndex}"]`)
+      if (targetEl && !targetEl._contentBuilt) buildTargetContent(targetEl, exp, scene)
+    })
   })
   scene.addEventListener('arError', () =>
     showError('AR failed to start. Use Chrome on Android or Safari on iOS.'))
@@ -543,9 +563,6 @@ function setupAREvents(scene, indexMap) {
     if (!targetEl) return
 
     targetEl.addEventListener('targetFound', () => {
-      // First detection: build the content lazily
-      if (!targetEl._contentBuilt) buildTargetContent(targetEl, exp, scene)
-
       // Refine plane size using real marker dimensions
       refineAspectRatio(scene, targetEl, exp)
 
