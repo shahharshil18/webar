@@ -538,6 +538,20 @@ async function loadMindARCompiler() {
   return _mindARModule
 }
 
+// MindAR's compiler runs its feature-detection pipeline on tensorflow.js's
+// webgl backend and never registered a cpu fallback for its custom kernels
+// (e.g. BinomialFilter) — without a real WebGL context it throws from deep
+// inside an internal promise that our await never sees, hanging the UI
+// forever instead of surfacing an error. Fail fast instead.
+function hasWebGL() {
+  try {
+    const canvas = document.createElement('canvas')
+    return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'))
+  } catch {
+    return false
+  }
+}
+
 function MarkerTab({ form, set, userId, productId }) {
   const [status, setStatus] = useState('idle') // idle | loading | compiling | uploading | done | error
   const [progress, setProgress] = useState(0)
@@ -555,6 +569,23 @@ function MarkerTab({ form, set, userId, productId }) {
     const objectUrl = URL.createObjectURL(file)
     setPreviewUrl(objectUrl)
 
+    if (!hasWebGL()) {
+      setStatus('error')
+      setErrorMsg('This browser/device has no WebGL support, which the marker compiler requires. Try enabling hardware acceleration, updating your GPU drivers, or using a different browser.')
+      return
+    }
+
+    // MindAR's internal tfjs pipeline can throw from a promise our own
+    // await never sees (see hasWebGL above) — if that happens mid-compile,
+    // surface it as an error instead of leaving the UI stuck on "Compiling…".
+    let compileRejected = false
+    const onUnhandledRejection = (rejectionEvent) => {
+      compileRejected = true
+      setStatus('error')
+      setErrorMsg(rejectionEvent.reason?.message || 'Marker compilation failed unexpectedly (likely a WebGL/GPU issue in this browser).')
+    }
+    window.addEventListener('unhandledrejection', onUnhandledRejection)
+
     try {
       setStatus('loading')
       const { Compiler } = await loadMindARCompiler()
@@ -569,6 +600,7 @@ function MarkerTab({ form, set, userId, productId }) {
       setStatus('compiling')
       const compiler = new Compiler()
       await compiler.compileImageTargets([img], (p) => setProgress(Math.round(p * 100)))
+      if (compileRejected) return
       const buffer = await compiler.exportData()
 
       setStatus('uploading')
@@ -588,6 +620,8 @@ function MarkerTab({ form, set, userId, productId }) {
     } catch (err) {
       setStatus('error')
       setErrorMsg(err.message || 'Compilation failed')
+    } finally {
+      window.removeEventListener('unhandledrejection', onUnhandledRejection)
     }
   }
 
