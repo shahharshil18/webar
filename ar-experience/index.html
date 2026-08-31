@@ -58,8 +58,8 @@
       100% { transform: translateX(350%); }
     }
 
-    /* ── Permission ── */
-    #permission-screen {
+    /* ── Permission / start gate ── */
+    #permission-screen, #no-link-screen {
       position: fixed; inset: 0; z-index: 900; background: var(--ink);
       display: none; flex-direction: column;
       align-items: center; justify-content: center; gap: 24px; padding: 32px;
@@ -168,10 +168,16 @@
 </div>
 
 <div id="permission-screen">
-  <div class="perm-icon">📷</div>
-  <div class="perm-title">Allow Camera Access</div>
-  <p class="perm-desc">To open your AR gift, we need your camera. We don't record or store anything.</p>
-  <button id="btn-allow-camera">Allow Camera →</button>
+  <div class="perm-icon">🎁</div>
+  <div class="perm-title" id="perm-title">Your AR Gift is Ready</div>
+  <p class="perm-desc">We'll need your camera to reveal it. We don't record or store anything.</p>
+  <button id="btn-allow-camera">View Gift →</button>
+</div>
+
+<div id="no-link-screen" style="display:none">
+  <div class="perm-icon">🎁</div>
+  <div class="perm-title">Open Your Gift Link</div>
+  <p class="perm-desc">This page needs the direct link or QR code from your gift to start the camera. Please use the link you were sent.</p>
 </div>
 
 <div id="error-screen">
@@ -259,18 +265,6 @@ async function idbSet(store, key, val) {
   })
 }
 
-// ─── Camera permission — check once, remember forever ────────────────────────
-async function cameraAlreadyGranted() {
-  // Fast path: localStorage flag set by us after first grant
-  if (localStorage.getItem('argift-cam') === '1') return true
-  // Permissions API (Chrome/Android; iOS Safari doesn't support camera query)
-  try {
-    const p = await navigator.permissions.query({ name: 'camera' })
-    return p.state === 'granted'
-  } catch { return false }
-}
-const markCameraGranted = () => localStorage.setItem('argift-cam', '1')
-
 // ─── Supabase fetch helpers ───────────────────────────────────────────────────
 const SB_HEADERS = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
 
@@ -282,15 +276,6 @@ async function fetchExperience(pid) {
   const d = await r.json()
   if (!d.length) throw new Error('No AR experience found for this product.')
   return d[0]
-}
-
-async function fetchAllExperiences() {
-  const fields = 'id,product_id,title,experience_type,media_url,media_urls,marker_url,marker_image_url,marker_aspect_ratio,template_id,text_message,cta_label,cta_url,updated_at'
-  const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/experiences?select=${fields}&order=updated_at.desc`,
-    { headers: SB_HEADERS })
-  if (!r.ok) throw new Error('Failed to load experiences')
-  return r.json()
 }
 
 // ─── .mind blob loader — IndexedDB cache-first ────────────────────────────────
@@ -306,61 +291,11 @@ async function loadMindBlob(url) {
   return URL.createObjectURL(new Blob([buf], { type: 'application/octet-stream' }))
 }
 
-// ─── Root mode: compile ALL experiences into one .mind ────────────────────────
-// Version key = sorted "id:updated_at" — recompiles only when something changes.
-// Result is cached in IDB so every visit after the first is instant.
-async function buildMasterMind(experiences) {
-  const valid = experiences.filter(e => e.marker_image_url)
-  if (!valid.length) throw new Error('No markers found. Upload marker images in the dashboard first.')
-
-  const versionKey = 'master::' + valid.map(e => `${e.id}:${e.updated_at}`).sort().join('|')
-
-  // Cache hit?
-  const [cachedBuf, cachedMap] = await Promise.all([
-    idbGet('mind', versionKey).catch(() => null),
-    idbGet('meta', versionKey).catch(() => null),
-  ])
-  if (cachedBuf && cachedMap) {
-    return {
-      mindUrl:  URL.createObjectURL(new Blob([cachedBuf], { type: 'application/octet-stream' })),
-      indexMap: cachedMap,
-    }
-  }
-
-  // Cache miss — load images + compile (silently, no progress shown to user)
-  const images = await Promise.all(valid.map(e => new Promise((res, rej) => {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.onload  = () => res(img)
-    img.onerror = () => rej(new Error(`Cannot load marker image for "${e.product_id}"`))
-    img.src = e.marker_image_url
-  })))
-
-  const { Compiler } = await import(/* @vite-ignore */
-    'https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js')
-  const compiler = new Compiler()
-  await compiler.compileImageTargets(images, () => {}) // progress suppressed
-
-  const buffer   = await compiler.exportData()
-  const indexMap = valid.map((e, i) => ({ targetIndex: i, productId: e.product_id, exp: e }))
-
-  // Persist both for next visit
-  Promise.all([
-    idbSet('mind', versionKey, buffer),
-    idbSet('meta', versionKey, indexMap),
-  ]).catch(() => {})
-
-  return {
-    mindUrl: URL.createObjectURL(new Blob([buffer], { type: 'application/octet-stream' })),
-    indexMap,
-  }
-}
-
 // ─── Build A-Frame / MindAR scene ────────────────────────────────────────────
 function buildScene(mindUrl, numTargets) {
   const scene = document.createElement('a-scene')
   scene.setAttribute('mindar-image',
-    `imageTargetSrc: ${mindUrl}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no; warmupTolerance: 5; missTolerance: 5; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 0.001`)
+    `imageTargetSrc: ${mindUrl}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no; warmupTolerance: 5; missTolerance: 5; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 1000`)
   scene.setAttribute('renderer', 'colorManagement: true')
   scene.setAttribute('vr-mode-ui', 'enabled: false')
   scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
@@ -395,16 +330,6 @@ function buildScene(mindUrl, numTargets) {
 function buildTargetContent(targetEl, exp, scene) {
   const ar = parseFloat(exp.marker_aspect_ratio) || 1
   const W = 1, H = ar
-
-  // Thin gold border (behind content)
-  const border = document.createElement('a-plane')
-  border.setAttribute('data-ar-border', '')
-  border.setAttribute('width',    (W + 0.004).toString())
-  border.setAttribute('height',   (H + 0.004).toString())
-  border.setAttribute('position', '0 0 -0.001')
-  border.setAttribute('material', 'color: #c9932a; shader: flat; side: double')
-  targetEl.appendChild(border)
-  targetEl._border = border
 
   if (exp.experience_type === 'video' && exp.media_url) {
     // Video element lives outside <a-assets> — a-assets only processes at scene
@@ -499,13 +424,9 @@ function refineAspectRatio(scene, targetEl, exp) {
     if (!(ratio > 0)) return
     const W = 1, H = ratio
     const content = targetEl.querySelector('[data-ar-content]')
-    const border  = targetEl._border
     if (content) {
       content.setAttribute('width', W); content.setAttribute('height', H)
       content.setAttribute('position', '0 0 0.001')
-    }
-    if (border) {
-      border.setAttribute('width', W + 0.004); border.setAttribute('height', H + 0.004)
     }
   }
 
@@ -626,18 +547,15 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) clean
 window.addEventListener('pagehide', cleanup)
 window.addEventListener('beforeunload', cleanup)
 
-// ─── Launch AR (both modes share this) ───────────────────────────────────────
-async function launchAR(mindUrl, indexMap) {
-  markCameraGranted()
-  $('loading-screen').classList.remove('hidden')
-  // Keep the indeterminate bar going — loading screen hides when arReady fires
-
+// ─── Prepare AR scene in the background (no camera access yet) ───────────────
+// Building the scene and letting MindAR parse the .mind tracking data into
+// its Controller is the slow part — none of it needs the camera, so it runs
+// while the tap-to-start screen is showing. Only system.start() (which is
+// what actually calls getUserMedia) waits for the user's tap.
+async function prepareAR(mindUrl, indexMap) {
   sceneEl = buildScene(mindUrl, indexMap.length)
   setupAREvents(sceneEl, indexMap)
-
-  sceneEl.addEventListener('loaded', () => {
-    sceneEl.systems?.['mindar-image-system']?.start()
-  })
+  await new Promise(res => sceneEl.addEventListener('loaded', res, { once: true }))
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -648,64 +566,44 @@ async function main() {
     return
   }
 
+  const params = new URLSearchParams(location.search)
+  const pid    = params.get('pid') || params.get('id')
+
+  // No direct gift link — never touch the camera, just point them at the real one.
+  if (!pid) {
+    $('loading-screen').classList.add('hidden')
+    $('no-link-screen').style.display = 'flex'
+    return
+  }
+
   // Indeterminate bar — no numbers, no "compiling" text visible to user
   $('loading-bar').classList.add('indeterminate')
   $('loading-status').textContent = 'Opening AR experience…'
 
-  const params = new URLSearchParams(location.search)
-  const pid    = params.get('pid') || params.get('id')
+  let exp
+  try { exp = await fetchExperience(pid) }
+  catch (e) { showError(e.message); return }
 
-  // ── Start loading assets immediately — parallel with permission screen ──────
-  let assetsPromise
+  // ── Load + prepare everything in the background, no camera involved yet ──────
+  // Runs the whole time the tap-to-start screen is showing, so by the time the
+  // user taps, the only thing left to do is open the camera.
+  const readyPromise = loadMindBlob(exp.marker_url).then(mindUrl => {
+    const indexMap = [{ targetIndex: 0, productId: exp.product_id, exp }]
+    return prepareAR(mindUrl, indexMap)
+  })
 
-  if (pid) {
-    let exp
-    try { exp = await fetchExperience(pid) }
-    catch (e) { showError(e.message); return }
+  // ── Always require an explicit tap before the camera starts, every visit ─────
+  $('loading-screen').classList.add('hidden')
+  $('perm-title').textContent = 'An experience is waiting for you'
+  $('permission-screen').style.display = 'flex'
 
-    assetsPromise = loadMindBlob(exp.marker_url)
-      .then(mindUrl => ({ mindUrl, indexMap: [{ targetIndex: 0, productId: exp.product_id, exp }] }))
-
-  } else {
-    let exps
-    try { exps = await fetchAllExperiences() }
-    catch (e) { showError(e.message); return }
-
-    if (!exps.length) { showError('No AR experiences published yet.'); return }
-
-    const validCount = exps.filter(e => e.marker_image_url).length
-    if (!validCount) {
-      showError('No marker images found. Please upload marker images for your experiences in the dashboard.')
-      return
-    }
-
-    // Compile silently — no status updates exposed to user
-    assetsPromise = buildMasterMind(exps)
-  }
-
-  // ── Camera permission gate ─────────────────────────────────────────────────
-  const alreadyGranted = await cameraAlreadyGranted()
-
-  if (alreadyGranted) {
-    let assets
-    try { assets = await assetsPromise }
+  $('btn-allow-camera').addEventListener('click', async () => {
+    $('permission-screen').style.display = 'none'
+    $('loading-screen').classList.remove('hidden')
+    try { await readyPromise }
     catch (e) { showError(e.message || 'Failed to prepare AR assets.'); return }
-    await launchAR(assets.mindUrl, assets.indexMap)
-
-  } else {
-    $('loading-screen').classList.add('hidden')
-    $('permission-screen').style.display = 'flex'
-
-    $('btn-allow-camera').addEventListener('click', async () => {
-      $('permission-screen').style.display = 'none'
-      $('loading-screen').classList.remove('hidden')
-      // Assets have been loading the whole time the permission screen was visible
-      let assets
-      try { assets = await assetsPromise }
-      catch (e) { showError(e.message || 'Failed to prepare AR assets.'); return }
-      await launchAR(assets.mindUrl, assets.indexMap)
-    }, { once: true })
-  }
+    sceneEl.systems?.['mindar-image-system']?.start()
+  }, { once: true })
 }
 
 main()
