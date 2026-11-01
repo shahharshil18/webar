@@ -32,6 +32,7 @@ export default function ExperienceEditor({ experience, userId, onSaved, onCancel
     if (!file) return
     setUploading(true)
     try {
+      if (form.experience_type === 'video') warnIfVideoTooHeavy(file)
       const ext = file.name.split('.').pop()
       const path = `${userId}/${experience.product_id}/media.${ext}`
       const bucket = form.experience_type === 'video' ? 'videos' : 'images'
@@ -531,6 +532,48 @@ function CTATab({ form, set }) {
   )
 }
 
+// Phones decode the video and upload every frame to the GPU while also running the tracker, so a 4K
+// or very high-bitrate clip is the most common cause of a laggy experience. Advise, never block.
+const MAX_VIDEO_SIDE = 1920
+const MAX_VIDEO_MB = 25
+function warnIfVideoTooHeavy(file) {
+  const url = URL.createObjectURL(file)
+  const probe = document.createElement('video')
+  probe.preload = 'metadata'
+  probe.onloadedmetadata = () => {
+    const side = Math.max(probe.videoWidth, probe.videoHeight)
+    const mb = file.size / 1048576
+    if (side > MAX_VIDEO_SIDE || mb > MAX_VIDEO_MB) {
+      toast(`This video is ${probe.videoWidth}×${probe.videoHeight}, ${mb.toFixed(0)} MB. It may stutter on phones — 1080p or lower, under ~${MAX_VIDEO_MB} MB (H.264 MP4) plays smoothest.`, { icon: '⚠️', duration: 9000 })
+    }
+    URL.revokeObjectURL(url)
+  }
+  probe.onerror = () => URL.revokeObjectURL(url)
+  probe.src = url
+}
+
+// The tracker only needs enough detail to recognise the artwork on a phone screen. Compiling a full
+// 12 MP photo makes the .mind file ~40% bigger (slower to download and parse on every scan) for no
+// recognition benefit, so compile from a copy capped at this size. The original is still stored.
+const MAX_MARKER_PX = 1024
+async function downscaleForCompile(img) {
+  const longSide = Math.max(img.naturalWidth, img.naturalHeight)
+  if (longSide <= MAX_MARKER_PX) return img
+  const scale = MAX_MARKER_PX / longSide
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(img.naturalWidth * scale)
+  canvas.height = Math.round(img.naturalHeight * scale)
+  const ctx = canvas.getContext('2d')
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/png'))
+  const small = new Image()
+  const smallUrl = URL.createObjectURL(blob)
+  await new Promise((res, rej) => { small.onload = res; small.onerror = rej; small.src = smallUrl })
+  URL.revokeObjectURL(smallUrl)
+  return small
+}
+
 let _mindARModule = null
 async function loadMindARCompiler() {
   if (_mindARModule) return _mindARModule
@@ -599,7 +642,7 @@ function MarkerTab({ form, set, userId, productId }) {
 
       setStatus('compiling')
       const compiler = new Compiler()
-      await compiler.compileImageTargets([img], (p) => setProgress(Math.round(p * 100)))
+      await compiler.compileImageTargets([await downscaleForCompile(img)], (p) => setProgress(Math.round(p * 100)))
       if (compileRejected) return
       const buffer = await compiler.exportData()
 

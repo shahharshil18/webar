@@ -34,24 +34,19 @@ Open `http://localhost:5173`
 
 ## Step 3 — AR Experience (static HTML)
 
-```bash
-# For local dev, just serve the ar-experience folder:
-cd ar-experience
-npx serve . --cors -l 5500
-```
-
-Open `http://localhost:5500/?pid=TEST123`
-
-**Before deploying**, you need to replace the placeholder values in `index.html`:
-- `__SUPABASE_URL__` → your Supabase project URL
-- `__SUPABASE_ANON_KEY__` → your Supabase anon key
-
-Or use the build script (reads from env vars):
+`index.html` contains `__SUPABASE_URL__` / `__SUPABASE_ANON_KEY__` placeholders that the build script fills in
+from env vars, so build first and serve the `dist/` output (also for local dev):
 ```bash
 cd ar-experience
 SUPABASE_URL=https://xxx.supabase.co SUPABASE_ANON_KEY=xxx node build.js
-# Output is in ar-experience/dist/index.html
+npx serve dist --cors -l 5500
 ```
+
+Open `http://localhost:5500/?pid=TEST123`. Without `?pid=` the page deliberately shows a "use your gift link" screen
+and never touches the camera.
+
+Append `&q=low`, `&q=mid` or `&q=high` to force a device quality tier (camera resolution + render
+resolution) when comparing phones. By default the tier is picked from the device's memory and core count.
 
 ---
 
@@ -120,10 +115,16 @@ argift/
 │   │       └── constants.js
 │   └── vercel.json
 │
-├── ar-experience/          # Static HTML (receiver side)
-│   ├── index.html          # Mind AR + A-Frame experience
-│   ├── targets/            # Put .mind files here
-│   ├── build.js            # Injects env vars for production
+├── ar-experience/          # Static site, no bundler (receiver side)
+│   ├── index.html          # Shell, import map, module preloads
+│   ├── app.js              # Boot flow + UI wiring (tap-to-start, error states)
+│   ├── engine.js           # MindAR + three.js: camera, tiers, tracker pre-warm, pose smoothing
+│   ├── content.js          # Video / photo / text overlays (fit, sRGB, fade-in)
+│   ├── media.js            # Starts downloading media early, unlocks audio on tap
+│   ├── pose-filter.js      # One-Euro smoothing in pose space
+│   ├── styles.css
+│   ├── sw.js               # Caches the engine CDN files between visits
+│   ├── build.js            # Injects env vars, copies files to dist/
 │   └── vercel.json
 │
 └── supabase/
@@ -136,10 +137,11 @@ argift/
 
 1. Sender creates experience → saves to Supabase → gets QR code
 2. QR encodes URL: `https://ar.yourdomain.com/?pid=<uuid>`
-3. Receiver scans QR → browser opens URL → camera permission requested
-4. Mind AR loads the `.mind` marker file linked to this experience
-5. Camera detects the product artwork (marker) → A-Frame renders content above it
-6. After 2.5s, CTA button appears → links to whatever URL sender set
+3. Receiver scans QR → browser opens URL → "An experience is waiting for you" screen. The tracking file, media and the
+   engine download and warm up in the background; the camera is **not** started yet
+4. Receiver taps **View Gift** → camera starts (this tap is also what allows the video to play with sound)
+5. MindAR detects the artwork (marker) → three.js draws the content on it
+6. CTA button appears → links to whatever URL sender set
 7. Replay and Share buttons also available
 
 ---

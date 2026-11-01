@@ -2,611 +2,98 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0f1e" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>ARgift — Open your gift ✦</title>
 
-  <!-- Preload CDN scripts — no crossorigin attr so credential mode matches the script tags below -->
-  <link rel="preload" as="script"
-    href="https://cdn.jsdelivr.net/npm/aframe@1.4.2/dist/aframe.min.js" />
-  <link rel="preload" as="script"
-    href="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js" />
-
-  <!-- A-Frame first (required), then MindAR -->
-  <script src="https://cdn.jsdelivr.net/npm/aframe@1.4.2/dist/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
-
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="preconnect" href="__SUPABASE_URL__" crossorigin />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;600&display=swap" rel="stylesheet" />
 
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --gold: #c9932a; --gold-light: #f0c060;
-      --ink: #0a0f1e;
-      --font-display: 'Playfair Display', serif;
-      --font-body: 'DM Sans', system-ui, sans-serif;
+  <!-- Engine: three.js + MindAR (image tracking). Resolved through the import map below. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/jsm/",
+      "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js",
+      "mindar-image": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"
     }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-    body { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+  }
+  </script>
 
-    /* ── Loading ── */
-    #loading-screen {
-      position: fixed; inset: 0; z-index: 1000;
-      background: var(--ink);
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 20px;
-      transition: opacity 0.5s ease;
-    }
-    #loading-screen.hidden { opacity: 0; pointer-events: none; }
-    .loading-logo { font-size: 40px; color: var(--gold-light); animation: pulse-glow 2s ease-in-out infinite; }
-    @keyframes pulse-glow {
-      0%,100% { text-shadow: 0 0 20px rgba(240,192,96,0.4); }
-      50% { text-shadow: 0 0 60px rgba(240,192,96,0.9), 0 0 100px rgba(240,192,96,0.4); }
-    }
-    .loading-title { font-family: var(--font-display); font-size: 28px; font-weight: 700; color: #fff; }
-    #loading-status { font-size: 14px; color: rgba(255,255,255,0.45); text-align: center; padding: 0 32px; line-height: 1.6; min-height: 44px; }
-    .loading-bar-wrap { width: 200px; height: 2px; background: rgba(255,255,255,0.1); border-radius: 1px; overflow: hidden; }
-    .loading-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--gold), var(--gold-light)); border-radius: 1px; transition: width 0.3s ease; }
-    .loading-bar.indeterminate { width: 40% !important; animation: bar-slide 1.4s ease-in-out infinite; }
-    @keyframes bar-slide {
-      0%   { transform: translateX(-100%); }
-      100% { transform: translateX(350%); }
-    }
+  <!-- Fetch the whole module graph in parallel while the experience record loads,
+       instead of discovering it one import at a time. -->
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.module.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/jsm/renderers/CSS3DRenderer.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/controller-mGt1s8dJ.js" crossorigin />
+  <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/ui-fBadYuor.js" crossorigin />
+  <link rel="modulepreload" href="./engine.js" />
+  <link rel="modulepreload" href="./content.js" />
+  <link rel="modulepreload" href="./pose-filter.js" />
 
-    /* ── Permission / start gate ── */
-    #permission-screen, #no-link-screen {
-      position: fixed; inset: 0; z-index: 900; background: var(--ink);
-      display: none; flex-direction: column;
-      align-items: center; justify-content: center; gap: 24px; padding: 32px;
-    }
-    .perm-icon { font-size: 56px; }
-    .perm-title { font-family: var(--font-display); font-size: 26px; color: #fff; text-align: center; }
-    .perm-desc { font-size: 14px; color: rgba(255,255,255,0.5); text-align: center; line-height: 1.7; max-width: 300px; }
-    #btn-allow-camera {
-      background: linear-gradient(135deg, var(--gold), #e8a830);
-      color: #fff; border: none; border-radius: 40px;
-      padding: 16px 40px; font-size: 16px; font-weight: 600;
-      cursor: pointer; font-family: var(--font-body);
-      box-shadow: 0 8px 24px rgba(201,147,42,0.4); transition: all 0.2s;
-    }
-    #btn-allow-camera:hover { transform: translateY(-2px); }
+  <!-- Fonts never block first paint -->
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,700&family=DM+Sans:wght@400;600&display=swap" onload="this.rel='stylesheet'" />
+  <link rel="stylesheet" href="./styles.css" />
 
-    /* ── Scan overlay ── */
-    #scan-hint {
-      position: fixed; inset: 0; z-index: 50; pointer-events: none;
-      display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 52px;
-    }
-    .scan-corner { position: fixed; width: 44px; height: 44px; }
-    .scan-corner.tl { top: 24px; left: 20px; border-top: 3px solid var(--gold); border-left: 3px solid var(--gold); border-radius: 8px 0 0 0; }
-    .scan-corner.tr { top: 24px; right: 20px; border-top: 3px solid var(--gold); border-right: 3px solid var(--gold); border-radius: 0 8px 0 0; }
-    .scan-corner.bl { bottom: 100px; left: 20px; border-bottom: 3px solid var(--gold); border-left: 3px solid var(--gold); border-radius: 0 0 0 8px; }
-    .scan-corner.br { bottom: 100px; right: 20px; border-bottom: 3px solid var(--gold); border-right: 3px solid var(--gold); border-radius: 0 0 8px 0; }
-    .scan-sweep {
-      position: fixed; left: 0; right: 0; height: 2px;
-      background: linear-gradient(90deg, transparent, var(--gold) 40%, var(--gold-light) 50%, var(--gold) 60%, transparent);
-      animation: sweep 2.2s ease-in-out infinite;
-      box-shadow: 0 0 12px 2px rgba(201,147,42,0.5);
-    }
-    @keyframes sweep {
-      0%   { top: 24px; opacity: 0; } 5% { opacity: 1; }
-      90%  { top: calc(100vh - 104px); opacity: 1; } 100% { top: calc(100vh - 104px); opacity: 0; }
-    }
-    .scan-status-row {
-      display: flex; align-items: center; gap: 8px;
-      background: rgba(0,0,0,0.55); backdrop-filter: blur(10px);
-      border: 1px solid rgba(255,255,255,0.12);
-      padding: 9px 18px; border-radius: 30px;
-    }
-    .scan-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); animation: blink 1.2s ease-in-out infinite; }
-    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
-    .scan-label { font-size: 13px; color: rgba(255,255,255,0.85); letter-spacing: 0.3px; }
-
-    /* ── Found flash ── */
-    #found-flash { position: fixed; inset: 0; z-index: 55; background: rgba(201,147,42,0.25); pointer-events: none; opacity: 0; }
-    #found-flash.flash { animation: found-anim 0.5s ease forwards; }
-    @keyframes found-anim { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; } }
-
-    /* ── CTA bar ── */
-    #cta-bar {
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
-      padding: 16px 24px 36px;
-      display: flex; flex-direction: column; align-items: center; gap: 12px;
-      background: linear-gradient(transparent, rgba(0,0,0,0.65));
-      pointer-events: none; opacity: 0; transform: translateY(16px);
-      transition: opacity 0.35s ease, transform 0.35s ease;
-    }
-    #cta-bar.visible { opacity: 1; transform: translateY(0); pointer-events: all; }
-    #btn-cta {
-      background: linear-gradient(135deg, var(--gold), #e8a830);
-      color: #fff; border: none; border-radius: 40px;
-      padding: 15px 36px; font-size: 16px; font-weight: 600;
-      cursor: pointer; font-family: var(--font-body);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 4px 16px rgba(201,147,42,0.4);
-      white-space: nowrap; max-width: 280px; transition: all 0.2s;
-    }
-    .ar-secondary-btns { display: flex; gap: 12px; }
-    .ar-sec-btn {
-      background: rgba(255,255,255,0.15); backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,0.25); color: #fff; border-radius: 30px;
-      padding: 9px 20px; font-size: 13px; font-weight: 500;
-      cursor: pointer; font-family: var(--font-body); transition: all 0.2s;
-    }
-
-    /* ── Error ── */
-    #error-screen {
-      position: fixed; inset: 0; z-index: 800; background: var(--ink);
-      display: none; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 32px;
-    }
-    #error-screen.visible { display: flex; }
-    .error-icon { font-size: 48px; }
-    .error-title { font-family: var(--font-display); font-size: 24px; color: #fff; }
-    #error-message { font-size: 14px; color: rgba(255,255,255,0.5); text-align: center; line-height: 1.6; max-width: 300px; }
-    .error-retry {
-      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
-      color: #fff; border-radius: 30px; padding: 12px 28px;
-      font-size: 14px; cursor: pointer; font-family: var(--font-body); transition: all 0.2s;
-    }
-
-    /* ── A-Frame container ── */
-    #aframe-container { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
-    a-scene { position: fixed !important; inset: 0 !important; }
-    a-scene canvas { display: block !important; }
-  </style>
+  <script>window.__ARGIFT__ = { url: '__SUPABASE_URL__', key: '__SUPABASE_ANON_KEY__' }</script>
 </head>
 <body>
 
-<div id="loading-screen">
-  <div class="loading-logo">✦</div>
-  <div class="loading-title">ARgift</div>
-  <div id="loading-status">Loading…</div>
-  <div class="loading-bar-wrap"><div class="loading-bar" id="loading-bar"></div></div>
+<!-- MindAR mounts the camera <video> and the WebGL canvas in here -->
+<div id="ar-container"></div>
+
+<div id="loading-screen" class="screen">
+  <div class="logo-mark">✦</div>
+  <div class="screen-title">ARgift</div>
+  <div id="loading-status" class="screen-text">Loading…</div>
+  <div class="loading-bar"><div class="loading-bar-fill"></div></div>
 </div>
 
-<div id="permission-screen">
-  <div class="perm-icon">🎁</div>
-  <div class="perm-title" id="perm-title">Your AR Gift is Ready</div>
-  <p class="perm-desc">We'll need your camera to reveal it. We don't record or store anything.</p>
-  <button id="btn-allow-camera">View Gift →</button>
+<div id="start-screen" class="screen" hidden>
+  <div class="gift">🎁</div>
+  <h1 class="screen-title">An experience is waiting for you</h1>
+  <p class="screen-text">Point your camera at the artwork to reveal it. We don't record or store anything.</p>
+  <button id="btn-start" class="btn-primary" type="button">View Gift →</button>
 </div>
 
-<div id="no-link-screen" style="display:none">
-  <div class="perm-icon">🎁</div>
-  <div class="perm-title">Open Your Gift Link</div>
-  <p class="perm-desc">This page needs the direct link or QR code from your gift to start the camera. Please use the link you were sent.</p>
+<div id="nolink-screen" class="screen" hidden>
+  <div class="gift">🎁</div>
+  <h1 class="screen-title">Open Your Gift Link</h1>
+  <p class="screen-text">This page needs the direct link or QR code from your gift to start the camera. Please use the link you were sent.</p>
 </div>
 
-<div id="error-screen">
-  <div class="error-icon">⚠️</div>
-  <div class="error-title">Something went wrong</div>
-  <p id="error-message">Unable to load your gift experience.</p>
-  <button class="error-retry" onclick="location.reload()">Try again</button>
+<div id="error-screen" class="screen" hidden>
+  <div class="gift">⚠️</div>
+  <h1 class="screen-title">Something went wrong</h1>
+  <p id="error-message" class="screen-text">Unable to load your gift experience.</p>
+  <button class="btn-ghost" type="button" onclick="location.reload()">Try again</button>
 </div>
 
-<div id="found-flash"></div>
-
-<div id="scan-hint" style="display:none">
-  <div class="scan-corner tl"></div><div class="scan-corner tr"></div>
-  <div class="scan-corner bl"></div><div class="scan-corner br"></div>
-  <div class="scan-sweep"></div>
-  <div class="scan-status-row">
-    <div class="scan-dot"></div>
-    <span class="scan-label" id="scan-label-text">Scanning for product…</span>
+<div id="scan-hint" hidden>
+  <div class="scan-frame">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <div class="scan-sweep"></div>
   </div>
+  <div class="status-pill"><span class="status-dot"></span><span>Point your camera at the artwork</span></div>
 </div>
 
-<div id="aframe-container"></div>
+<button id="sound-chip" class="chip" type="button" hidden>🔇 Tap for sound</button>
 
 <div id="cta-bar">
-  <button id="btn-cta" style="display:none">Open Gift</button>
-  <div class="ar-secondary-btns">
-    <button class="ar-sec-btn" id="btn-replay">↺ Replay</button>
-    <button class="ar-sec-btn" id="btn-share">⇧ Share</button>
+  <button id="btn-cta" class="btn-primary" type="button" hidden>Open</button>
+  <div class="row">
+    <button id="btn-replay" class="chip" type="button">↺ Replay</button>
+    <button id="btn-share" class="chip" type="button">⇧ Share</button>
   </div>
 </div>
 
-<script type="module">
-// ─── Config ───────────────────────────────────────────────────────────────────
-const SUPABASE_URL = '__SUPABASE_URL__'
-const SUPABASE_KEY = '__SUPABASE_ANON_KEY__'
-
-// ─── State ────────────────────────────────────────────────────────────────────
-let sceneEl = null
-
-const $ = id => document.getElementById(id)
-const setStatus = (msg, pct) => {
-  $('loading-status').textContent = msg
-  if (pct !== undefined) $('loading-bar').style.width = pct + '%'
-}
-const showError = msg => {
-  $('loading-screen').classList.add('hidden')
-  $('error-screen').classList.add('visible')
-  $('error-message').textContent = msg
-}
-
-// ─── Service Worker ───────────────────────────────────────────────────────────
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {})
-}
-
-// ─── IndexedDB helpers (cache compiled .mind files between sessions) ──────────
-const IDB = 'argift-v1'
-function idbOpen() {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open(IDB, 1)
-    r.onupgradeneeded = e => {
-      const db = e.target.result
-      if (!db.objectStoreNames.contains('mind')) db.createObjectStore('mind')
-      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta')
-    }
-    r.onsuccess = e => res(e.target.result)
-    r.onerror = () => rej(r.error)
-  })
-}
-async function idbGet(store, key) {
-  const db = await idbOpen()
-  return new Promise((res, rej) => {
-    const tx = db.transaction(store, 'readonly')
-    const r = tx.objectStore(store).get(key)
-    r.onsuccess = e => res(e.target.result ?? null)
-    r.onerror = () => rej(r.error)
-  })
-}
-async function idbSet(store, key, val) {
-  const db = await idbOpen()
-  return new Promise((res, rej) => {
-    const tx = db.transaction(store, 'readwrite')
-    tx.objectStore(store).put(val, key)
-    tx.oncomplete = res; tx.onerror = () => rej(tx.error)
-  })
-}
-
-// ─── Supabase fetch helpers ───────────────────────────────────────────────────
-const SB_HEADERS = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
-
-async function fetchExperience(pid) {
-  const r = await fetch(
-    `${SUPABASE_URL}/rest/v1/experiences?product_id=eq.${encodeURIComponent(pid)}&select=*`,
-    { headers: SB_HEADERS })
-  if (!r.ok) throw new Error('Failed to fetch experience')
-  const d = await r.json()
-  if (!d.length) throw new Error('No AR experience found for this product.')
-  return d[0]
-}
-
-// ─── .mind blob loader — IndexedDB cache-first ────────────────────────────────
-// Converts a remote .mind URL into a local blob URL (no CORS issues for MindAR).
-// On first load: fetches from Supabase CDN → stores in IDB.
-// On repeat loads: serves from IDB instantly (no network).
-async function loadMindBlob(url) {
-  if (!url) throw new Error('No marker file configured.')
-  const cached = await idbGet('mind', url).catch(() => null)
-  if (cached) return URL.createObjectURL(new Blob([cached], { type: 'application/octet-stream' }))
-  const buf = await fetch(url).then(r => r.arrayBuffer())
-  idbSet('mind', url, buf).catch(() => {}) // async write, don't block
-  return URL.createObjectURL(new Blob([buf], { type: 'application/octet-stream' }))
-}
-
-// ─── Build A-Frame / MindAR scene ────────────────────────────────────────────
-function buildScene(mindUrl, numTargets) {
-  const scene = document.createElement('a-scene')
-  scene.setAttribute('mindar-image',
-    `imageTargetSrc: ${mindUrl}; autoStart: false; uiLoading: no; uiScanning: no; uiError: no; warmupTolerance: 5; missTolerance: 5; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 1000`)
-  scene.setAttribute('renderer', 'colorManagement: true')
-  scene.setAttribute('vr-mode-ui', 'enabled: false')
-  scene.setAttribute('device-orientation-permission-ui', 'enabled: false')
-
-  const assets = document.createElement('a-assets')
-  assets.setAttribute('timeout', '60000')
-  scene.appendChild(assets)
-
-  // Camera — MindAR needs this to correctly project AR content
-  const cam = document.createElement('a-camera')
-  cam.setAttribute('position', '0 0 0')
-  cam.setAttribute('look-controls', 'enabled: false')
-  scene.appendChild(cam)
-
-  const light = document.createElement('a-light')
-  light.setAttribute('type', 'ambient'); light.setAttribute('intensity', '2')
-  scene.appendChild(light)
-
-  // One target entity per experience — content is built lazily on first targetFound
-  for (let i = 0; i < numTargets; i++) {
-    const t = document.createElement('a-entity')
-    t.setAttribute('mindar-image-target', `targetIndex: ${i}`)
-    t.dataset.targetIndex = String(i)
-    scene.appendChild(t)
-  }
-
-  $('aframe-container').appendChild(scene)
-  return scene
-}
-
-// ─── Lazy content builder (called on first targetFound for each target) ───────
-function buildTargetContent(targetEl, exp, scene) {
-  const ar = parseFloat(exp.marker_aspect_ratio) || 1
-  const W = 1, H = ar
-
-  if (exp.experience_type === 'video' && exp.media_url) {
-    // Video element lives outside <a-assets> — a-assets only processes at scene
-    // init, so lazily-added videos render black if registered through it.
-    const vid = document.createElement('video')
-    vid.crossOrigin = 'anonymous'
-    vid.loop = true; vid.muted = true; vid.playsInline = true
-    vid.setAttribute('playsinline', ''); vid.setAttribute('webkit-playsinline', '')
-    vid.preload = 'auto'
-    vid.src = exp.media_url
-    vid.load() // begin buffering now so the first frame is ready when marker is found
-    targetEl._video = vid
-
-    const el = document.createElement('a-plane')
-    el.setAttribute('data-ar-content', '')
-    el.setAttribute('width', W.toString()); el.setAttribute('height', H.toString())
-    el.setAttribute('position', '0 0 0.001'); el.setAttribute('rotation', '0 0 0')
-    targetEl.appendChild(el)
-
-    const applyVideoTexture = mesh => {
-      const { THREE } = AFRAME
-      const tex = new THREE.VideoTexture(vid)
-      tex.minFilter = THREE.LinearFilter
-      tex.magFilter = THREE.LinearFilter
-      mesh.material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
-      mesh.material.needsUpdate = true
-      el.removeAttribute('animation') // stop pulsing
-    }
-
-    el.addEventListener('loaded', () => {
-      const mesh = el.getObject3D('mesh')
-      if (!mesh) return
-
-      if (vid.readyState >= 3) {
-        // Video already has a frame — apply texture immediately
-        applyVideoTexture(mesh)
-      } else {
-        // Show dark pulsing placeholder until the video is ready
-        const { THREE } = AFRAME
-        mesh.material = new THREE.MeshBasicMaterial({ color: 0x0a0f1e, side: THREE.DoubleSide })
-        el.setAttribute('animation', 'property: material.opacity; from: 0.4; to: 1; loop: true; dir: alternate; dur: 700; easing: easeInOutSine')
-        vid.addEventListener('canplay', () => applyVideoTexture(el.getObject3D('mesh')), { once: true })
-      }
-    })
-  }
-
-  if (exp.experience_type === 'photo') {
-    const url = exp.media_urls?.[0] || exp.media_url
-    if (url) {
-      const el = document.createElement('a-plane')
-      el.setAttribute('data-ar-content', '')
-      el.setAttribute('src', url)
-      el.setAttribute('width', W.toString()); el.setAttribute('height', H.toString())
-      el.setAttribute('position', '0 0 0.001'); el.setAttribute('rotation', '0 0 0')
-      el.setAttribute('material', 'transparent: false; shader: flat; side: double')
-      targetEl.appendChild(el)
-    }
-  }
-
-  if (exp.experience_type === 'text') {
-    const tpl = ({
-      golden:   { color: '#f0c060', bg: '#1a0a00' },
-      midnight: { color: '#c8d8ff', bg: '#0a0f1e' },
-      sakura:   { color: '#4a1530', bg: '#ffd6e7' },
-      forest:   { color: '#c8f5c8', bg: '#1a3a1a' },
-    })[exp.template_id] || { color: '#f0c060', bg: '#000' }
-
-    const bg = document.createElement('a-plane')
-    bg.setAttribute('data-ar-content', '')
-    bg.setAttribute('width', W.toString()); bg.setAttribute('height', H.toString())
-    bg.setAttribute('position', '0 0 0.001'); bg.setAttribute('rotation', '0 0 0')
-    bg.setAttribute('material', `color: ${tpl.bg}; opacity: 0.9; transparent: true; shader: flat`)
-    targetEl.appendChild(bg)
-
-    const txt = document.createElement('a-text')
-    txt.setAttribute('value', exp.text_message || 'A gift for you ✦')
-    txt.setAttribute('color', tpl.color); txt.setAttribute('align', 'center')
-    txt.setAttribute('width', '0.85'); txt.setAttribute('position', '0 0 0.003')
-    txt.setAttribute('rotation', '0 0 0'); txt.setAttribute('wrap-count', '20')
-    targetEl.appendChild(txt)
-  }
-
-  targetEl._contentBuilt = true
-}
-
-// ─── Aspect-ratio refinement per target ──────────────────────────────────────
-// Tries MindAR controller data first (free), then loads the source image as fallback.
-function refineAspectRatio(scene, targetEl, exp) {
-  const idx = parseInt(targetEl.dataset.targetIndex, 10)
-
-  const apply = ratio => {
-    if (!(ratio > 0)) return
-    const W = 1, H = ratio
-    const content = targetEl.querySelector('[data-ar-content]')
-    if (content) {
-      content.setAttribute('width', W); content.setAttribute('height', H)
-      content.setAttribute('position', '0 0 0.001')
-    }
-  }
-
-  try {
-    const ctrl = scene.systems['mindar-image-system'].controller
-
-    // MindAR 1.x: allDimensions[i] = [width, height]
-    if (Array.isArray(ctrl.allDimensions?.[idx])) {
-      const [w, h] = ctrl.allDimensions[idx]
-      if (w > 0 && h > 0) { apply(h / w); return }
-    }
-    // Fallback paths across builds
-    const t = ctrl.imageTargets?.[idx] || ctrl.targets?.[idx]
-    if (t) {
-      if (Array.isArray(t.dimensions) && t.dimensions[0] > 0) { apply(t.dimensions[1] / t.dimensions[0]); return }
-      const h = t.imageHeight ?? t.height, w = t.imageWidth ?? t.width
-      if (h > 0 && w > 0) { apply(h / w); return }
-    }
-  } catch {}
-
-  // Image load fallback (uses marker_image_url stored during dashboard upload)
-  if (exp.marker_image_url) {
-    const img = new Image(); img.crossOrigin = 'anonymous'
-    img.onload = () => apply(img.naturalHeight / img.naturalWidth)
-    img.src = exp.marker_image_url
-    return
-  }
-
-  // Last resort: DB-saved ratio
-  apply(parseFloat(exp.marker_aspect_ratio))
-}
-
-// ─── Wire up AR tracking events ───────────────────────────────────────────────
-function setupAREvents(scene, indexMap) {
-  scene.addEventListener('arReady', () => {
-    $('loading-screen').classList.add('hidden')
-    $('scan-hint').style.display = 'flex'
-
-    // Pre-build all target content now so videos start buffering immediately.
-    // By the time the user points at a marker (several seconds later), the
-    // first frame is ready and there's no black-screen delay.
-    indexMap.forEach(({ targetIndex, exp }) => {
-      const targetEl = scene.querySelector(`[data-target-index="${targetIndex}"]`)
-        || scene.querySelector(`[mindar-image-target="targetIndex: ${targetIndex}"]`)
-      if (targetEl && !targetEl._contentBuilt) buildTargetContent(targetEl, exp, scene)
-    })
-  })
-  scene.addEventListener('arError', () =>
-    showError('AR failed to start. Use Chrome on Android or Safari on iOS.'))
-
-  indexMap.forEach(({ targetIndex, exp }) => {
-    const targetEl = scene.querySelector(`[data-target-index="${targetIndex}"]`)
-      // querySelector on dataset doesn't work — use attribute selector:
-      || scene.querySelector(`[mindar-image-target="targetIndex: ${targetIndex}"]`)
-    if (!targetEl) return
-
-    targetEl.addEventListener('targetFound', () => {
-      // Refine plane size using real marker dimensions
-      refineAspectRatio(scene, targetEl, exp)
-
-      // Gold flash
-      const flash = $('found-flash')
-      flash.classList.remove('flash'); void flash.offsetWidth; flash.classList.add('flash')
-      $('scan-label-text').textContent = '✦ Product found!'
-      setTimeout(() => { $('scan-hint').style.display = 'none' }, 400)
-
-      // Play video — muted first (mobile autoplay policy), unmute after short delay
-      if (targetEl._video) {
-        const vid = targetEl._video
-        vid.muted = true
-        vid.play().then(() => setTimeout(() => { vid.muted = false }, 300)).catch(() => {})
-      }
-
-      showCTABar(exp)
-    })
-
-    targetEl.addEventListener('targetLost', () => {
-      $('scan-label-text').textContent = 'Scanning for product…'
-      $('scan-hint').style.display = 'flex'
-      if (targetEl._video) targetEl._video.pause()
-      hideCTABar()
-    })
-  })
-}
-
-// ─── CTA bar ──────────────────────────────────────────────────────────────────
-function showCTABar(exp) {
-  const btnCta = $('btn-cta')
-  if (exp.cta_label && exp.cta_url) {
-    btnCta.textContent = exp.cta_label; btnCta.style.display = 'inline-flex'
-    btnCta.onclick = () => window.open(exp.cta_url, '_blank', 'noopener')
-  } else {
-    btnCta.style.display = 'none'
-  }
-  $('btn-replay').onclick = () => {
-    const vid = sceneEl?.querySelector('[mindar-image-target] video')
-    if (vid) { vid.currentTime = 0; vid.muted = false; vid.play().catch(() => {}) }
-  }
-  $('btn-share').onclick = async () => {
-    if (navigator.share) { try { await navigator.share({ title: 'ARgift', url: location.href }) } catch {} }
-    else { await navigator.clipboard.writeText(location.href).catch(() => {}); alert('Link copied!') }
-  }
-  $('cta-bar').classList.add('visible')
-}
-const hideCTABar = () => $('cta-bar').classList.remove('visible')
-
-// ─── Cleanup — release camera + memory on page leave ─────────────────────────
-function cleanup() {
-  if (!sceneEl) return
-  try {
-    sceneEl.querySelectorAll('video').forEach(v => { v.pause(); v.src = '' })
-    sceneEl.systems?.['mindar-image-system']?.stop()
-    sceneEl.parentNode?.removeChild(sceneEl)
-  } catch {}
-  sceneEl = null
-}
-document.addEventListener('visibilitychange', () => { if (document.hidden) cleanup() })
-window.addEventListener('pagehide', cleanup)
-window.addEventListener('beforeunload', cleanup)
-
-// ─── Prepare AR scene in the background (no camera access yet) ───────────────
-// Building the scene and letting MindAR parse the .mind tracking data into
-// its Controller is the slow part — none of it needs the camera, so it runs
-// while the tap-to-start screen is showing. Only system.start() (which is
-// what actually calls getUserMedia) waits for the user's tap.
-async function prepareAR(mindUrl, indexMap) {
-  sceneEl = buildScene(mindUrl, indexMap.length)
-  setupAREvents(sceneEl, indexMap)
-  await new Promise(res => sceneEl.addEventListener('loaded', res, { once: true }))
-}
-
-// ─── Main ─────────────────────────────────────────────────────────────────────
-async function main() {
-  // Guard: build.js replaces these placeholders at deploy time.
-  if (!SUPABASE_URL || SUPABASE_URL.includes('__') || !SUPABASE_URL.startsWith('https://')) {
-    showError('Config error: VITE_SUPABASE_URL is missing. Set it in Vercel → Settings → Environment Variables, then redeploy. Current value: "' + SUPABASE_URL + '"')
-    return
-  }
-
-  const params = new URLSearchParams(location.search)
-  const pid    = params.get('pid') || params.get('id')
-
-  // No direct gift link — never touch the camera, just point them at the real one.
-  if (!pid) {
-    $('loading-screen').classList.add('hidden')
-    $('no-link-screen').style.display = 'flex'
-    return
-  }
-
-  // Indeterminate bar — no numbers, no "compiling" text visible to user
-  $('loading-bar').classList.add('indeterminate')
-  $('loading-status').textContent = 'Opening AR experience…'
-
-  let exp
-  try { exp = await fetchExperience(pid) }
-  catch (e) { showError(e.message); return }
-
-  // ── Load + prepare everything in the background, no camera involved yet ──────
-  // Runs the whole time the tap-to-start screen is showing, so by the time the
-  // user taps, the only thing left to do is open the camera.
-  const readyPromise = loadMindBlob(exp.marker_url).then(mindUrl => {
-    const indexMap = [{ targetIndex: 0, productId: exp.product_id, exp }]
-    return prepareAR(mindUrl, indexMap)
-  })
-
-  // ── Always require an explicit tap before the camera starts, every visit ─────
-  $('loading-screen').classList.add('hidden')
-  $('perm-title').textContent = 'An experience is waiting for you'
-  $('permission-screen').style.display = 'flex'
-
-  $('btn-allow-camera').addEventListener('click', async () => {
-    $('permission-screen').style.display = 'none'
-    $('loading-screen').classList.remove('hidden')
-    try { await readyPromise }
-    catch (e) { showError(e.message || 'Failed to prepare AR assets.'); return }
-    sceneEl.systems?.['mindar-image-system']?.start()
-  }, { once: true })
-}
-
-main()
-</script>
+<script type="module" src="./app.js"></script>
 </body>
 </html>

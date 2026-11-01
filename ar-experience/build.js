@@ -12,17 +12,19 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.warn('⚠ SUPABASE_URL / SUPABASE_ANON_KEY not set — placeholders left in output')
 }
 
-mkdirSync(resolve(__dirname, 'dist'), { recursive: true })
+const dist = resolve(__dirname, 'dist')
+mkdirSync(dist, { recursive: true })
 
-// Inject credentials into index.html
+// Inject credentials into index.html (the URL appears in the preconnect hint and the config)
 const src = readFileSync(resolve(__dirname, 'index.html'), 'utf8')
 const out = src
-  .replace('__SUPABASE_URL__', SUPABASE_URL)
-  .replace('__SUPABASE_ANON_KEY__', SUPABASE_KEY)
-
-writeFileSync(resolve(__dirname, 'dist', 'index.html'), out, 'utf8')
+  .replaceAll('__SUPABASE_URL__', SUPABASE_URL)
+  .replaceAll('__SUPABASE_ANON_KEY__', SUPABASE_KEY)
+writeFileSync(resolve(dist, 'index.html'), out, 'utf8')
 console.log('✦ Built dist/index.html')
 
-// Copy service worker (must be at root so its scope covers the whole origin)
-copyFileSync(resolve(__dirname, 'sw.js'), resolve(__dirname, 'dist', 'sw.js'))
-console.log('✦ Copied dist/sw.js')
+// Static files, served as-is. The service worker must sit at the root so its scope covers the origin.
+for (const file of ['app.js', 'media.js', 'engine.js', 'content.js', 'pose-filter.js', 'styles.css', 'sw.js']) {
+  copyFileSync(resolve(__dirname, file), resolve(dist, file))
+  console.log(`✦ Copied dist/${file}`)
+}

@@ -1,0 +1,120 @@
+/* ARgift viewer — everything that sits on top of a live camera feed is kept cheap:
+   no backdrop-filter, no animated layout properties, no animated box/text-shadows.
+   Only transform + opacity animate, so the browser can run them on the compositor
+   without stealing time from the tracker. */
+
+:root {
+  --ink: #0a0f1e;
+  --gold: #c9932a;
+  --gold-light: #f0c060;
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+
+html, body {
+  width: 100%; height: 100%; overflow: hidden; background: #000;
+  overscroll-behavior: none; -webkit-tap-highlight-color: transparent;
+}
+body {
+  font-family: var(--font-body); color: #fff; -webkit-font-smoothing: antialiased;
+  touch-action: manipulation; -webkit-user-select: none; user-select: none;
+}
+
+/* Camera video + WebGL canvas are placed by MindAR inside this box */
+#ar-container { position: fixed; inset: 0; overflow: hidden; background: #000; z-index: 1; }
+
+/* ── Full-screen states (loading / start / no link / error) ── */
+.screen {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; padding: 32px; text-align: center;
+  background: radial-gradient(120% 80% at 50% 0%, #17224d 0%, var(--ink) 58%);
+}
+.screen-title { font-family: var(--font-display); font-weight: 700; font-size: 28px; line-height: 1.2; max-width: 20ch; }
+.screen-text  { font-size: 15px; line-height: 1.65; color: rgba(255, 255, 255, 0.58); max-width: 30ch; min-height: 1.65em; }
+.gift { font-size: 64px; line-height: 1; animation: float 3.4s ease-in-out infinite; }
+.logo-mark { font-size: 40px; color: var(--gold-light); animation: breathe 2s ease-in-out infinite; }
+#loading-screen .screen-title { font-size: 26px; }
+
+.loading-bar { width: 200px; height: 2px; background: rgba(255, 255, 255, 0.12); border-radius: 1px; overflow: hidden; }
+.loading-bar-fill {
+  width: 40%; height: 100%; border-radius: 1px;
+  background: linear-gradient(90deg, var(--gold), var(--gold-light));
+  animation: slide 1.4s ease-in-out infinite; will-change: transform;
+}
+
+@keyframes float   { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes breathe { 0%, 100% { transform: scale(1);    opacity: 0.75; } 50% { transform: scale(1.12); opacity: 1; } }
+@keyframes slide   { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
+
+/* ── Buttons ── */
+.btn-primary, .btn-ghost, .chip {
+  font-family: var(--font-body); cursor: pointer; border: 0; color: #fff;
+  -webkit-appearance: none; appearance: none;
+}
+.btn-primary {
+  min-height: 52px; padding: 0 38px; border-radius: 28px; font-size: 16px; font-weight: 600;
+  background: linear-gradient(135deg, var(--gold), #e8a830);
+  box-shadow: 0 8px 24px rgba(201, 147, 42, 0.35);
+  white-space: nowrap; max-width: min(320px, 86vw); overflow: hidden; text-overflow: ellipsis;
+}
+.btn-primary:active, .chip:active { transform: scale(0.97); }
+.btn-primary:disabled { opacity: 0.6; }
+.btn-ghost {
+  min-height: 46px; padding: 0 28px; border-radius: 24px; font-size: 14px;
+  background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.chip {
+  min-height: 40px; padding: 0 18px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  background: rgba(16, 20, 36, 0.78); border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+/* ── Scanning guide ── neutral white, no gold outline on the artwork ── */
+#scan-hint {
+  position: fixed; inset: 0; z-index: 50; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px;
+  padding-bottom: calc(var(--safe-b) + 24px);
+}
+.scan-frame { position: relative; width: min(72vw, 320px); aspect-ratio: 3 / 4; overflow: hidden; }
+.corner { position: absolute; width: 30px; height: 30px; border: 0 solid rgba(255, 255, 255, 0.92); }
+.corner.tl { top: 0;    left: 0;  border-top-width: 3px;    border-left-width: 3px;  border-top-left-radius: 12px; }
+.corner.tr { top: 0;    right: 0; border-top-width: 3px;    border-right-width: 3px; border-top-right-radius: 12px; }
+.corner.bl { bottom: 0; left: 0;  border-bottom-width: 3px; border-left-width: 3px;  border-bottom-left-radius: 12px; }
+.corner.br { bottom: 0; right: 0; border-bottom-width: 3px; border-right-width: 3px; border-bottom-right-radius: 12px; }
+.scan-sweep {
+  position: absolute; left: 0; right: 0; top: 0; height: 40%;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.2) 55%, transparent);
+  animation: sweep 2.4s ease-in-out infinite; will-change: transform;
+}
+@keyframes sweep { 0% { transform: translateY(-100%); } 100% { transform: translateY(250%); } }
+
+.status-pill {
+  display: flex; align-items: center; gap: 9px; padding: 10px 18px; border-radius: 999px;
+  font-size: 14px; color: rgba(255, 255, 255, 0.92);
+  background: rgba(10, 15, 30, 0.78); border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #fff; animation: blink 1.3s ease-in-out infinite; }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+/* ── Controls shown once the artwork is found ── */
+#cta-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 18px 20px calc(20px + var(--safe-b));
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.62));
+  opacity: 0; transform: translateY(12px); pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+#cta-bar.visible { opacity: 1; transform: none; pointer-events: auto; }
+#cta-bar .row { display: flex; gap: 10px; }
+#sound-chip { position: fixed; z-index: 70; top: calc(14px + var(--safe-t)); right: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .gift, .logo-mark, .loading-bar-fill, .scan-sweep, .status-dot { animation: none; }
+  #cta-bar { transition: none; }
+}
